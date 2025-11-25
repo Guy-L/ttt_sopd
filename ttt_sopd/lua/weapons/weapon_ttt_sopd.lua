@@ -498,7 +498,7 @@ elseif CLIENT then
             end
 
             if DEBUG:GetBool() then print("[SFX] Playing on-kill triumph sound", choice) end
-            swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
+            swordEnt:EmitSound(sounds[choice], SNDLVL_180dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
         end
     end)
 
@@ -781,7 +781,7 @@ function SWEP:StabRagdoll(tr, spos, sdest)
         if math.random() > 0.8 then stabSnd = "rag_stab2" end
 
         if DEBUG:GetBool() then print("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol) end
-        stuckSword:EmitSound(sounds[stabSnd], SNDLVL_70dB, 100, stabVol, CHAN_BODY)
+        stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
     end
 
     self:Consume(true, hitRagdoll)

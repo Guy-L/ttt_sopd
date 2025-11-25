@@ -503,25 +503,35 @@ elseif CLIENT then
     end)
 
     function SWEP:UpdateTooltip(targetAlive)
+        --TODO properly handle PaP here so "Inhale yourself?" can show up
         if self.Packed or not roundTargetPoolSize then return end
+
         if DEBUG:GetBool() then print("Updating sword tooltip...") end
+        self:ClearHUDHelp()
+
+        if self:GetOwner() == swordTargetPlayer then
+            self:AddTTT2HUDHelp("sopd_instruction_for_target")
+            return
+        end
 
         if roundTargetPoolSize < 2 then
-            self:AddTTT2HUDHelp("sopd_instruction_targeted")
-        else
-            if swordTargetPlayer then
-                if targetAlive then
-                    self:AddTTT2HUDHelp("sopd_instruction_targeted")
-                else
-                    if RAGDOLL_STAB_COVERUP:GetBool() then
-                        self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
-                    else
-                        self:AddTTT2HUDHelp("sopd_instruction_stab")
-                    end
-                end
+            self:AddTTT2HUDHelp("sopd_instruction_targetless")
+            return
+        end
+
+        if swordTargetPlayer then
+            if targetAlive then
+                self:AddTTT2HUDHelp("sopd_instruction_targeted")
             else
-                self:AddTTT2HUDHelp("sopd_instruction_targetless")
+                if RAGDOLL_STAB_COVERUP:GetBool() then
+                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                else
+                    self:AddTTT2HUDHelp("sopd_instruction_stab")
+                end
+                --TODO "cant do shit" instruction for if the corpse is gone
             end
+        else
+            self:AddTTT2HUDHelp("sopd_instruction_targetless")
         end
     end
 
@@ -591,7 +601,7 @@ function SWEP:PrimaryAttack()
 
     -- raycast to get entity hit by sword, ignoring owner & other swords
     local function SwordTraceFilter(ent)
-        return ent != owner and ent:GetModel() != SWORD_WORLDMODEL
+        return ent:GetModel() != SWORD_WORLDMODEL and (ent != owner or owner == swordTargetPlayer)
     end
 
     local tr = util.TraceHull({start=spos, endpos=sdest, filter=SwordTraceFilter, mask=MASK_SHOT_HULL, mins=kmins, maxs=kmaxs})

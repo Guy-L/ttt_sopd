@@ -5,13 +5,17 @@ UPGRADE.desc  = "Inhale your enemy and make it later! (cannibalism + identity di
 --Note: ID disguise functionality requires Identity Disguiser addon to work
 
 function UPGRADE:Apply(SWEP)
-    UPGRADE.name = string.gsub(SWEP.PrintName, "Defeat", "Def-Eat")
+    local newVerb = "Def-Eat"
+    if math.random() > 0.5 then newVerb = "Delete" end
+
+    UPGRADE.name = string.gsub(SWEP.PrintName, "Defeat", newVerb)
 
     --targetless PaP swords have limited ammo for reasons that should be obvious
     if not swordTargetPlayer then self:SetClip(SWEP, 1) end
 
     SWEP.Packed = true
     if CLIENT then
+        SWEP:ClearHUDHelp()
         SWEP:AddTTT2HUDHelp("sopd_instruction_pap_lmb")
     end
 
@@ -56,6 +60,7 @@ if CLIENT then
 
         for _, wep in ipairs(LocalPlayer():GetWeapons()) do
             if wep:GetClass() == UPGRADE.class then
+                wep:ClearHUDHelp()
                 wep:AddTTT2HUDHelp("sopd_instruction_pap_lmb2", "sopd_instruction_pap_rmb")
             end
         end

@@ -443,7 +443,7 @@ elseif CLIENT then
                     if IsValid(targetRag) then glowTarget = {targetRag} end
                 end
             elseif inRange then
-                glowTarget = {ply:GetEyeTrace(MASK_SHOT).Entity}
+                glowTarget = {localPlayer:GetEyeTrace(MASK_SHOT).Entity}
             end
 
             if inRange or ENABLE_TARGET_GLOW:GetBool() then

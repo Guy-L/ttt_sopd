@@ -1,10 +1,12 @@
 local L = LANG.GetLanguageTableReference("en")
 
 L["sopd_instruction_targeted"] = "Defeat target"
+L["sopd_instruction_for_target"] = "Defeat yourself"
 L["sopd_instruction_targetless"] = "Defeat any player"
 L["sopd_instruction_stab"] = "Stab corpse"
 L["sopd_instruction_stab_coverup"] = "Stab corpse & destroy evidence"
 L["sopd_instruction_pap_lmb"] = "Inhale enemy"
+L["sopd_instruction_pap_lmb_self"] = "Inhale yourself?"
 L["sopd_instruction_pap_lmb2"] = "Swing triumphantly"
 L["sopd_instruction_pap_rmb"] = "Toggle copy ability (disguise)"
 L["sopd_instantkill"] = "DEFEAT"

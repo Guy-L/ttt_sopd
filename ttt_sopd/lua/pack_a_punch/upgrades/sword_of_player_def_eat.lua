@@ -21,7 +21,7 @@ function UPGRADE:Apply(SWEP)
 
     function SWEP:PackEffect(rag, owner)
         self.packVictim = rag.PlyOwner
-        owner:EmitSound(sounds["inhale"], SNDLVL_180dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_VOICE)
+        owner:EmitSound(sounds["inhale"], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_VOICE)
 
         -- delays to line up with suck sfx
         timer.Simple(2, function()

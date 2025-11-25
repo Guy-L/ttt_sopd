@@ -507,7 +507,7 @@ elseif CLIENT then
             end
 
             if DEBUG:GetBool() then print("[SFX] Playing on-kill triumph sound", choice) end
-            swordEnt:EmitSound(sounds[choice], SNDLVL_180dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
+            swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
         end
     end)
 

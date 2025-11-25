@@ -233,8 +233,17 @@ if SERVER then
         roundTargetPoolSize = #possibleTargetPool
 
         -- Select target player
-        if #possibleTargetPool > 0 and playerCnt > 2 then
-            swordTargetPlayer = possibleTargetPool[math.random(1, #possibleTargetPool)]
+        if DEBUG:GetBool() then print("[SoPD Server] Possible targets: ", roundTargetPoolSize, "; player count: ", playerCnt) end
+
+        if roundTargetPoolSize > 0 and playerCnt > 2 then
+            newTarget = possibleTargetPool[math.random(1, roundTargetPoolSize)]
+
+            --retry just once to make it less likely to pick the same target twice
+            if newTarget == swordTargetPlayer then
+                if DEBUG:GetBool() then print("[SoPD Server] Let's try not to pick the same target twice...") end
+                newTarget = possibleTargetPool[math.random(1, roundTargetPoolSize)]
+            end
+            swordTargetPlayer = newTarget
 
             if DEBUG:GetBool() then print("[SoPD Server] Chosen sword target: " .. swordTargetPlayer:Nick() .. " (team: " .. swordTargetPlayer:GetTeam() .. ")") end
         else

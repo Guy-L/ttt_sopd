@@ -56,9 +56,9 @@ sounds = {
     rag_stab2     = Sound("sopd/sopd_rag_stab2.mp3"),
 }
 
---sword target, synchronized for server & client
-swordTargetPlayer = nil
-roundTargetPoolSize = nil --needed to check if targetless due to low playercount
+--global state (not assigned explicitly to help with debugging)
+--swordTargetPlayer   | sword target, synchronized for server & client
+--roundTargetPoolSize | needed to check if targetless due to low playercount
 
 function CanBeSlain(ply)
     --print("CanBeSlain", IsValid(ply))
@@ -338,9 +338,6 @@ if SERVER then
             swordTargetPlayer = nil
             UnTargetSwords()
 
-            -- yeah no, this doesn't work (TODO? shop reload?)
-            --shopSWEP.PrintName = DEFAULT_NAME
-
             net.Start(SWORD_TARGET_MSG)
             net.WritePlayer(swordTargetPlayer)
             net.WriteFloat(roundTargetPoolSize) --(player count at start of round didn't change)
@@ -365,18 +362,21 @@ if SERVER then
 elseif CLIENT then
     if DEBUG:GetBool() then print("[SoPD Client] Initializing....") end
 
-    sopdMetaSWEP = sopdMetaSWEP or SWEP --og instance made at weapon initialization
-    SWEP.Icon = "vgui/ttt/icon_sopd"
-    SWEP.PrintName = DEFAULT_NAME
-    SWEP.Author = "Guy"
-    SWEP.Instructions = LANG.TryTranslation("sopd_instruction")
-    SWEP.EquipMenuData = {type = "Melee Weapon"}
-    SWEP.Slot = 6
+    regMetaSWEP = regMetaSWEP or SWEP --meta instance made at registration (map load)
+    curMetaSWEP = SWEP --meta instance made at initialization
+    -- (may not point to the same object when debugging / hot-reloading)
 
-    SWEP.ViewModelFlip = false
-    SWEP.ViewModelFOV  = 80
-    SWEP.DrawCrosshair = false
-    SWEP.UseHands      = true
+    curMetaSWEP.Icon = "vgui/ttt/icon_sopd"
+    curMetaSWEP.PrintName = DEFAULT_NAME
+    curMetaSWEP.Author = "Guy"
+    curMetaSWEP.Instructions = LANG.TryTranslation("sopd_instruction")
+    curMetaSWEP.EquipMenuData = {type = "Melee Weapon"}
+    curMetaSWEP.Slot = 6
+
+    curMetaSWEP.ViewModelFlip = false
+    curMetaSWEP.ViewModelFOV  = 80
+    curMetaSWEP.DrawCrosshair = false
+    curMetaSWEP.UseHands      = true
 
     net.Receive(SWORD_TARGET_MSG, function(msgLen, ply)
         local newTarget = net.ReadPlayer()
@@ -386,14 +386,14 @@ elseif CLIENT then
             if DEBUG:GetBool() then print("[SoPD Client] No sword target") end
 
             swordTargetPlayer = nil
-            sopdMetaSWEP:Update()
+            UpdateSwordMeta()
             UnTargetSwords()
 
         else
             if DEBUG:GetBool() then print("[SoPD Client] Known sword target: ".. newTarget:Nick()) end
 
             swordTargetPlayer = newTarget
-            sopdMetaSWEP:Update()
+            UpdateSwordMeta()
         end
     end)
 
@@ -548,8 +548,10 @@ elseif CLIENT then
     end
 
     -- update name & shop info; called for OG instance only
-    function sopdMetaSWEP:Update()
+    function UpdateSwordMeta()
         -- update shop description (text-building logic yippie)
+        desc = ""
+
         if swordTargetPlayer then
             local dmgReductionDesc = ""
             local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
@@ -586,69 +588,77 @@ elseif CLIENT then
                 dmgReductionDesc = dmgReductionDesc .. ". "
             end
 
-            -- (undocumented magic attributes ftw)
-            self.desc = "Swing to instantly and loudly defeat " .. swordTargetPlayer:Nick() .. ". " .. dmgReductionDesc .. "What a triumph is that!\n\n"
+            desc = "Swing to instantly and loudly defeat " .. swordTargetPlayer:Nick() .. ". " .. dmgReductionDesc .. "What a triumph is that!\n\n"
 
         else
-            self.desc = "The Sword failed to pick a target, but it'll still loudly defeat a player. What a triumph is that!\n\n"
+            desc = "The Sword failed to pick a target, but it'll still loudly defeat a player. What a triumph is that!\n\n"
         end
 
-        self.desc = self.desc .. "While held:\n"
+        desc = desc .. "While held:\n"
         if HOLDER_SPEEDUP:GetFloat() > 1 then
             local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
-            self.desc = self.desc .. "• ".. speedStr .. "x speed multiplier\n"
+            desc = desc .. "• ".. speedStr .. "x speed multiplier\n"
         end
         if swordTargetPlayer and ENABLE_TARGET_GLOW:GetBool() then
-            self.desc = self.desc .. "• Can see " .. swordTargetPlayer:Nick() .. "'s outline through walls\n"
+            desc = desc .. "• Can see " .. swordTargetPlayer:Nick() .. "'s outline through walls\n"
         end
         if swordTargetPlayer and TARGET_DMG_BLOCK:GetFloat() > 0 then
             local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
-            self.desc = self.desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTargetPlayer:Nick() .. "\n"
+            desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTargetPlayer:Nick() .. "\n"
         end
         if OTHERS_DMG_BLOCK:GetFloat() > 0 then
             local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
-            self.desc = self.desc .. "• Block " .. allBlockStr .. "% of "
+            desc = desc .. "• Block " .. allBlockStr .. "% of "
             if swordTargetPlayer then
                 if TARGET_DMG_BLOCK:GetFloat() > 0 then
-                    self.desc = self.desc .. "damage from others\n"
+                    desc = desc .. "damage from others\n"
                 else
-                    self.desc = self.desc .. "damage from non-targets\n"
+                    desc = desc .. "damage from non-targets\n"
                 end
             else
-                self.desc = self.desc .. "player damage\n"
+                desc = desc .. "player damage\n"
             end
         end
-        self.desc = self.desc .. "• You are very noticeable\n"
+        desc = desc .. "• You are very noticeable\n"
         if LEAVE_DNA:GetBool() then
-            self.desc = self.desc .. "Leaves DNA. "
+            desc = desc .. "Leaves DNA. "
         else
-            self.desc = self.desc .. "Leaves no DNA. "
+            desc = desc .. "Leaves no DNA. "
         end
         if swordTargetPlayer and RAGDOLL_STAB_COVERUP:GetBool() then
-            self.desc = self.desc .. "If " .. swordTargetPlayer:Nick() .. " is dead, you can stab their corpse to destroy evidence"
+            desc = desc .. "If " .. swordTargetPlayer:Nick() .. " is dead, you can stab their corpse to destroy evidence"
             if not LEAVE_DNA:GetBool() then
-                self.desc = self.desc .. " and remove DNA"
+                desc = desc .. " and remove DNA"
             end
-            self.desc = self.desc .. ".\n"
+            desc = desc .. ".\n"
         end
 
+        -- (undocumented magic attributes ftw)
+        regMetaSWEP.desc = desc
+
         --update SWEP's name
+        local name = ""
+
         if swordTargetPlayer then
-            self.name = "Sword of ".. swordTargetPlayer:Nick() .. " Defeat"
+            name = "Sword of ".. swordTargetPlayer:Nick() .. " Defeat"
 
             local tgtNick = string.lower(swordTargetPlayer:Nick())
             if tgtNick == "king dedede" or tgtNick == "dedede" then
-                self.name = self.PrintName .. "!"
+                name = name .. "!"
             end
         else
-            self.name = DEFAULT_NAME
+            name = DEFAULT_NAME
         end
-        self.PrintName = self.name
+
+        regMetaSWEP.PrintName = name
+        curMetaSWEP.PrintName = name
     end
 
     net.Receive(CVAR_UPDATE_MSG, function()
-        sopdMetaSWEP:Update()
+        UpdateSwordMeta()
     end)
+
+    UpdateSwordMeta()
 end
 
 SWEP.Base         = "weapon_tttbase"

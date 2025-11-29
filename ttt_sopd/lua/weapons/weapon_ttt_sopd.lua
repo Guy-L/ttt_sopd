@@ -1,29 +1,30 @@
-local CLASS_NAME = "weapon_ttt_sopd"
+local CLASS_NAME   = "weapon_ttt_sopd"
 local DEFAULT_NAME = "Sword of Player Defeat"
-local SWORD_VIEWMODEL = "models/ttt/sopd/v_sopd.mdl"
+local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
 local SWORD_WORLDMODEL = "models/ttt/sopd/w_sopd.mdl"
 
 local SWORD_TARGET_MSG   = "SoPD_SwordTargetMsg"
 local SWORD_KILLED_MSG   = "SoPD_SwordKilledMsg"
 local TARGET_DIED_MSG    = "SoPD_TargetDiedMsg"
 local TARGET_SPAWNED_MSG = "SoPD_TargetSpawnedMsg"
+local CVAR_UPDATE_MSG    = "SoPD_ConvarUpdateMsg"
 
-local HOOK_BEGIN_ROUND = "TTT_SoPD_ChooseTarget"
-local HOOK_PRE_GLOW = "TTT_SoPD_TargetGlow"
-local HOOK_RENDER_ENTINFO = "TTT_SoPD_TargetKillInfo"
-local HOOK_TAKE_DAMAGE = "TTT_SoPD_DamageImmunity"
-local HOOK_PLAYER_DEATH = "TTT_SoPD_ProcessDeaths"
-local HOOK_PLAYER_SPAWN = "TTT_SoPD_ProcessSpawns"
-local HOOK_PLAYER_STABBED = "TTT_SoPD_PlaySwordKillSound"
+local HOOK_BEGIN_ROUND       = "TTT_SoPD_ChooseTarget"
+local HOOK_PRE_GLOW          = "TTT_SoPD_TargetGlow"
+local HOOK_RENDER_ENTINFO    = "TTT_SoPD_TargetKillInfo"
+local HOOK_TAKE_DAMAGE       = "TTT_SoPD_DamageImmunity"
+local HOOK_PLAYER_DEATH      = "TTT_SoPD_ProcessDeaths"
+local HOOK_PLAYER_SPAWN      = "TTT_SoPD_ProcessSpawns"
+local HOOK_PLAYER_STABBED    = "TTT_SoPD_PlaySwordKillSound"
 local HOOK_PLAYER_DISCONNECT = "TTT_SoPD_UnsetTargetMidround"
-local HOOK_BUY = "TTT_SoPD_NotifyDisconnectToBuyers"
-local HOOK_SPEEDMOD = "TTT_SoPD_HolderSpeedup"
+local HOOK_BUY               = "TTT_SoPD_NotifyDisconnectToBuyers"
+local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 local DISCONNECT_NOTIF = "[SoPD] Target disconnected. Sword can now be used on anyone (no player-specific outline or damage resistance)." --tried to localize this but it wouldn't work reliably...
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE}
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
 local LEAVE_DNA = CreateConVar("ttt2_sopd_leave_dna", 0, CVAR_FLAGS, "Whether stabbing with the Sword leaves DNA.", 0, 1)
-local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_ragdoll_stab_coverup", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
+local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
 local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage)", 0, 100)
@@ -222,6 +223,7 @@ if SERVER then
     util.AddNetworkString(SWORD_KILLED_MSG)
     util.AddNetworkString(TARGET_DIED_MSG)
     util.AddNetworkString(TARGET_SPAWNED_MSG)
+    util.AddNetworkString(CVAR_UPDATE_MSG)
     util.AddNetworkString("SoPD_GainedDisguiseMsg")
     --resource.AddWorkshop("3607870957")
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
@@ -346,13 +348,29 @@ if SERVER then
         end
     end)
 
+    -- update shop description
+    function descVarChange(name, oldVal, newVal)
+        net.Start(CVAR_UPDATE_MSG)
+        net.Broadcast()
+    end
+    cvars.AddChangeCallback(HOLDER_SPEEDUP:GetName(), descVarChange)
+    cvars.AddChangeCallback(TARGET_DMG_BLOCK:GetName(), descVarChange)
+    cvars.AddChangeCallback(OTHERS_DMG_BLOCK:GetName(), descVarChange)
+    cvars.AddChangeCallback(RANGE_BUFF:GetName(), descVarChange)
+    cvars.AddChangeCallback(RAGDOLL_STAB_COVERUP:GetName(), descVarChange)
+    cvars.AddChangeCallback(LEAVE_DNA:GetName(), descVarChange)
+    cvars.AddChangeCallback(ENABLE_TARGET_GLOW:GetName(), descVarChange)
+
+
 elseif CLIENT then
     if DEBUG:GetBool() then print("[SoPD Client] Initializing....") end
 
+    sopdMetaSWEP = sopdMetaSWEP or SWEP --og instance made at weapon initialization
     SWEP.Icon = "vgui/ttt/icon_sopd"
     SWEP.PrintName = DEFAULT_NAME
     SWEP.Author = "Guy"
     SWEP.Instructions = LANG.TryTranslation("sopd_instruction")
+    SWEP.EquipMenuData = {type = "Melee Weapon"}
     SWEP.Slot = 6
 
     SWEP.ViewModelFlip = false
@@ -360,42 +378,6 @@ elseif CLIENT then
     SWEP.DrawCrosshair = false
     SWEP.UseHands      = true
 
-    local dmgReductionDesc = ""
-    local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
-    if targetDmgBlock == 100 then
-        dmgReductionDesc = "While you hold it, they cannot deal damage to you"
-    elseif targetDmgBlock > 0 then
-        dmgReductionDesc = "While you hold it, they deal " .. targetDmgBlock .. "% less damage to you"
-    end
-
-    local othersDmgBlock = OTHERS_DMG_BLOCK:GetFloat()
-    if othersDmgBlock > 0 then
-        if dmgReductionDesc == "" then
-            dmgReductionDesc = "While you hold it, players "
-        else
-            dmgReductionDesc = dmgReductionDesc .. ", and others "
-        end
-
-        if othersDmgBlock == 100 then
-            dmgReductionDesc = dmgReductionDesc .. "cannot damage you"
-            if targetDmgBlock == 100 then
-                dmgReductionDesc = dmgReductionDesc .. " either"
-            end
-        else
-            dmgReductionDesc = dmgReductionDesc .. "deal " .. othersDmgBlock .. "% less damage to you"
-        end
-    end
-
-    if dmgReductionDesc ~= "" then
-        dmgReductionDesc = dmgReductionDesc .. ". "
-    end
-
-    SWEP.EquipMenuData = {
-        type = "Melee Weapon",
-        desc = "Swing to instantly and loudly defeat the person whose name is on this sword. " .. dmgReductionDesc .. "What a triumph is that!"
-    }
-
-    shopSWEP = SWEP --ugly hack but not sure how else to do it
     net.Receive(SWORD_TARGET_MSG, function(msgLen, ply)
         local newTarget = net.ReadPlayer()
         roundTargetPoolSize = net.ReadFloat()
@@ -403,20 +385,15 @@ elseif CLIENT then
         if newTarget == Entity(0) or not newTarget then
             if DEBUG:GetBool() then print("[SoPD Client] No sword target") end
 
-            shopSWEP.PrintName = DEFAULT_NAME
             swordTargetPlayer = nil
+            sopdMetaSWEP:Update()
             UnTargetSwords()
 
         else
             if DEBUG:GetBool() then print("[SoPD Client] Known sword target: ".. newTarget:Nick()) end
 
-            shopSWEP.PrintName = "Sword of ".. newTarget:Nick() .. " Defeat"
-
-            local plyNick = string.lower(newTarget:Nick())
-            if plyNick == "king dedede" or plyNick == "dedede" then
-                shopSWEP.PrintName = shopSWEP.PrintName .. "!"
-            end
             swordTargetPlayer = newTarget
+            sopdMetaSWEP:Update()
         end
     end)
 
@@ -511,6 +488,18 @@ elseif CLIENT then
         end
     end)
 
+    net.Receive(TARGET_DIED_MSG, function()
+        for _, sword in ipairs(GetAllInvSwords()) do
+            sword:UpdateTooltip(false)
+        end
+    end)
+
+    net.Receive(TARGET_SPAWNED_MSG, function()
+        for _, sword in ipairs(GetAllInvSwords()) do
+            sword:UpdateTooltip(true)
+        end
+    end)
+
     function SWEP:UpdateTooltip(targetAlive)
         --TODO properly handle PaP here so "Inhale yourself?" can show up
         if self.Packed or not roundTargetPoolSize then return end
@@ -544,20 +533,6 @@ elseif CLIENT then
         end
     end
 
-    net.Receive(TARGET_DIED_MSG, function()
-        for _, sword in ipairs(GetAllInvSwords()) do
-            sword:UpdateTooltip(false)
-        end
-    end)
-
-    net.Receive(TARGET_SPAWNED_MSG, function()
-        if not roundTargetPoolSize then return end --prevent timing issue on first round
-
-        for _, sword in ipairs(GetAllInvSwords()) do
-            sword:UpdateTooltip(true)
-        end
-    end)
-
     function SWEP:Initialize() --on buy (local to 1 player)
         self:UpdateTooltip(IsLivingPlayer(swordTargetPlayer))
 
@@ -571,6 +546,109 @@ elseif CLIENT then
 
         return self.BaseClass.Initialize(self)
     end
+
+    -- update name & shop info; called for OG instance only
+    function sopdMetaSWEP:Update()
+        -- update shop description (text-building logic yippie)
+        if swordTargetPlayer then
+            local dmgReductionDesc = ""
+            local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
+            if targetDmgBlock == 100 then
+                dmgReductionDesc = "While you hold it, they cannot damage you"
+            elseif targetDmgBlock > 0 then
+                dmgReductionDesc = "While you hold it, they deal reduced damage to you"
+            end
+
+            local othersDmgBlock = OTHERS_DMG_BLOCK:GetFloat()
+            if othersDmgBlock > 0 then
+                if dmgReductionDesc == "" then
+                    dmgReductionDesc = "While you hold it, players "
+                else
+                    dmgReductionDesc = dmgReductionDesc .. ", and others "
+                end
+
+                if othersDmgBlock == 100 then
+                    dmgReductionDesc = dmgReductionDesc .. "cannot damage you"
+                    if targetDmgBlock == 100 then
+                        dmgReductionDesc = dmgReductionDesc .. " either"
+                    end
+                else
+                    dmgReductionDesc = dmgReductionDesc .. "deal reduced damage"
+                    if targetDmgBlock > 0 and targetDmgBlock < 100 then
+                        dmgReductionDesc = dmgReductionDesc .. " as well"
+                    else
+                        dmgReductionDesc = dmgReductionDesc .. " to you"
+                    end
+                end
+            end
+
+            if dmgReductionDesc ~= "" then
+                dmgReductionDesc = dmgReductionDesc .. ". "
+            end
+
+            -- (undocumented magic attributes ftw)
+            self.desc = "Swing to instantly and loudly defeat " .. swordTargetPlayer:Nick() .. ". " .. dmgReductionDesc .. "What a triumph is that!\n\n"
+
+        else
+            self.desc = "The Sword failed to pick a target, but it'll still loudly defeat a player. What a triumph is that!\n\n"
+        end
+
+        self.desc = self.desc .. "While held:\n"
+        if HOLDER_SPEEDUP:GetFloat() > 1 then
+            local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
+            self.desc = self.desc .. "• ".. speedStr .. "x speed multiplier\n"
+        end
+        if swordTargetPlayer and ENABLE_TARGET_GLOW:GetBool() then
+            self.desc = self.desc .. "• Can see " .. swordTargetPlayer:Nick() .. "'s outline through walls\n"
+        end
+        if swordTargetPlayer and TARGET_DMG_BLOCK:GetFloat() > 0 then
+            local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
+            self.desc = self.desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTargetPlayer:Nick() .. "\n"
+        end
+        if OTHERS_DMG_BLOCK:GetFloat() > 0 then
+            local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
+            self.desc = self.desc .. "• Block " .. allBlockStr .. "% of "
+            if swordTargetPlayer then
+                if TARGET_DMG_BLOCK:GetFloat() > 0 then
+                    self.desc = self.desc .. "damage from others\n"
+                else
+                    self.desc = self.desc .. "damage from non-targets\n"
+                end
+            else
+                self.desc = self.desc .. "player damage\n"
+            end
+        end
+        self.desc = self.desc .. "• You are very noticeable\n"
+        if LEAVE_DNA:GetBool() then
+            self.desc = self.desc .. "Leaves DNA. "
+        else
+            self.desc = self.desc .. "Leaves no DNA. "
+        end
+        if swordTargetPlayer and RAGDOLL_STAB_COVERUP:GetBool() then
+            self.desc = self.desc .. "If " .. swordTargetPlayer:Nick() .. " is dead, you can stab their corpse to destroy evidence"
+            if not LEAVE_DNA:GetBool() then
+                self.desc = self.desc .. " and remove DNA"
+            end
+            self.desc = self.desc .. ".\n"
+        end
+
+        --update SWEP's name
+        if swordTargetPlayer then
+            self.name = "Sword of ".. swordTargetPlayer:Nick() .. " Defeat"
+
+            local tgtNick = string.lower(swordTargetPlayer:Nick())
+            if tgtNick == "king dedede" or tgtNick == "dedede" then
+                self.name = self.PrintName .. "!"
+            end
+        else
+            self.name = DEFAULT_NAME
+        end
+        self.PrintName = self.name
+    end
+
+    net.Receive(CVAR_UPDATE_MSG, function()
+        sopdMetaSWEP:Update()
+    end)
 end
 
 SWEP.Base         = "weapon_tttbase"
@@ -782,7 +860,7 @@ function SWEP:StabRagdoll(tr, spos, sdest)
             hitRagdoll.dmgtype = DMG_SLASH
             hitRagdoll.scene.lastDamage = 12047
             hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
-            hitRagdoll.scene.waterLevel  = 0
+            hitRagdoll.scene.waterLevel = 0
             if not LEAVE_DNA:GetBool() then hitRagdoll.killer_sample = nil end
         end
 
@@ -865,8 +943,8 @@ function SWEP:AddToSettingsMenu(parent)
         label = "label_sopd_leave_dna"
     })
     formMain:MakeCheckBox({
-        serverConvar = "ttt2_sopd_ragdoll_stab_coverup",
-        label = "label_sopd_ragdoll_stab_coverup"
+        serverConvar = "ttt2_sopd_destroy_evidence",
+        label = "label_sopd_destroy_evidence"
     })
     formMain:MakeCheckBox({
         serverConvar = "ttt2_sopd_target_glow",

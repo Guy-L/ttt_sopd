@@ -1,3 +1,6 @@
+----------------------------------
+------- CONSTANTS & CVARS --------
+----------------------------------
 local CLASS_NAME   = "weapon_ttt_sopd"
 local DEFAULT_NAME = "Sword of Player Defeat"
 local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
@@ -16,10 +19,10 @@ local HOOK_TAKE_DAMAGE       = "TTT_SoPD_DamageImmunity"
 local HOOK_PLAYER_DEATH      = "TTT_SoPD_ProcessDeaths"
 local HOOK_PLAYER_SPAWN      = "TTT_SoPD_ProcessSpawns"
 local HOOK_PLAYER_STABBED    = "TTT_SoPD_PlaySwordKillSound"
-local HOOK_PLAYER_DISCONNECT = "TTT_SoPD_UnsetTargetMidround"
+local HOOK_PLAYER_CONNECT    = "TTT_SoPD_PlayerConnect"
+local HOOK_PLAYER_DISCONNECT = "TTT_SoPD_PlayerDisconnect"
 local HOOK_BUY               = "TTT_SoPD_NotifyDisconnectToBuyers"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
-local DISCONNECT_NOTIF = "[SoPD] Target disconnected. Sword can now be used on anyone (no player-specific outline or damage resistance)." --tried to localize this but it wouldn't work reliably...
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE}
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
@@ -44,6 +47,9 @@ local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_
 
 local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Activates some debug client/server prints & makes Sword re-buyable (should not be on for real play).", 0, 1)
 
+----------------------------------
+---------- SHARED STATE ----------
+----------------------------------
 sounds = {
     swing         = Sound("Weapon_Crowbar.Single"),
     triumph_best  = Sound("sopd/sopd_triumph_best.mp3"),
@@ -56,18 +62,20 @@ sounds = {
     rag_stab2     = Sound("sopd/sopd_rag_stab2.mp3"),
 }
 
---global state (not assigned explicitly to help with debugging)
---swordTargetPlayer   | sword target, synchronized for server & client
---roundTargetPoolSize | needed to check if targetless due to low playercount
+swordTarget = swordTarget or {} -- target data, synchronized for server & client
+--.player: player ref, may become invalid if target disconnects
+--.name: player's name (always valid)
+--.SID64: player's Steam ID (64bit)
 
-function CanBeSlain(ply)
-    --print("CanBeSlain", IsValid(ply))
-    --if IsValid(ply) then print(ply:IsPlayer(), swordTargetPlayer == nil, ply == swordTargetPlayer) end
-    return IsValid(ply) and ply:IsPlayer() and (swordTargetPlayer == nil or ply == swordTargetPlayer)
+----------------------------------
+---------- SHARED UTILS ----------
+----------------------------------
+function CanBeStabbed(ply)
+    return IsPlayer(ply) and (ply == swordTarget.player or not swordTarget.player)
 end
 
 function HoldsSword(ply, swordCanStab)
-    if IsValid(ply) and ply:IsPlayer() then
+    if IsPlayer(ply) then
         local wep = ply:GetActiveWeapon()
 
         return IsValid(wep) and wep:GetClass() == CLASS_NAME and (not swordCanStab or wep:CanStab())
@@ -77,78 +85,11 @@ function HoldsSword(ply, swordCanStab)
 end
 
 function IsLivingPlayer(ply)
-    return IsValid(ply) and ply:IsPlayer() and ply:Alive() and not ply:IsSpec()
+    return IsPlayer(ply) and ply:Alive() and not ply:IsSpec()
 end
 
-function InPlayerStabRange(ply)
-    if not (IsValid(ply) and ply:IsPlayer()) then return false end
-    local tr = ply:GetEyeTrace(MASK_SHOT)
-    if not (tr.HitNonWorld and IsValid(tr.Entity)) then return false end
-
-    return ply:GetShootPos():Distance(tr.HitPos) <= 110 * RANGE_BUFF:GetFloat() and CanBeSlain(tr.Entity)
-end
-
-local function StartDeploySound(wep)
-    if not SERVER then return end
-    local owner = wep:GetOwner()
-
-    if wep.DeploySound and wep.DeploySound:IsPlaying() then
-        if DEBUG:GetBool() then print("[SFX] Not starting deploy sound (song already playing).") end
-        return
-    end
-
-    if IsValid(owner) and wep:CanStab()
-      and (IsLivingPlayer(swordTargetPlayer) or not swordTargetPlayer) then
-        if DEBUG:GetBool() then print("[SFX] Starting deploy sound.") end
-
-        local deploySnd = "gourmet"
-        if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
-            deploySnd = "oatmeal"
-        end
-
-        wep.DeploySound = CreateSound(owner, sounds[deploySnd])
-        wep.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
-        wep.DeploySound:PlayEx(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100), 100)
-    end
-end
-
-local function StopDeploySound(wep)
-    if not SERVER then return end
-
-    if wep.DeploySound and not wep.DeploySound:IsPlaying() then
-        if DEBUG:GetBool() then print("[SFX] Not stopping deploy sound (song not playing).") end
-        return
-    end
-
-    if DEBUG:GetBool() then print("[SFX] Stopping deploy sound.") end
-    if wep.DeploySound then
-        wep.DeploySound:Stop()
-        wep.DeploySound = nil
-    end
-end
-
-function GetPossibleTargetPool()
-    local possibleTargetPool = {}
-    local livingPlayerCnt = 0
-
-    for _, ply in ipairs(player.GetAll()) do
-        if IsLivingPlayer(ply) then
-            livingPlayerCnt = livingPlayerCnt + 1
-
-            if ply:GetTeam() ~= TEAM_TRAITOR
-                and ply:GetTeam() ~= TEAM_JACKAL
-                and ply:GetTeam() ~= TEAM_INFECTED
-                and (CAN_TARGET_JESTERS:GetBool() or ply:GetRole() ~= TEAM_JESTER) then
-
-                table.insert(possibleTargetPool, ply)
-            end
-        end
-    end
-
-    return possibleTargetPool, livingPlayerCnt
-end
-
-function GetOpponentCount() --same as above pool's size but always without jesters
+--same as target drawing pool but always without jesters
+function GetOpponentCount()
     local opponentCnt = 0
 
     for _, ply in ipairs(player.GetAll()) do
@@ -165,7 +106,8 @@ function GetOpponentCount() --same as above pool's size but always without jeste
     return opponentCnt
 end
 
-function AdjustVolume(base_vol) -- stealth volume reduction effect adjustment
+-- stealth volume reduction effect adjustment
+function AdjustVolume(base_vol)
     local maxReduction = STEALTH_VOL_REDUCTION:GetFloat() / 100
     local maxOpps      = STEALTH_MAX_OPPS:GetInt()
 
@@ -174,10 +116,8 @@ function AdjustVolume(base_vol) -- stealth volume reduction effect adjustment
     local finalVolume = (1 - reductionStrength * maxReduction) * base_vol
 
     if DEBUG:GetBool() then
-        print("[SFX] base volume", base_vol)
-        print("[SFX] max reduction", maxReduction)
-        print("[SFX] max opps", maxOpps)
-        print("[SFX] opp count", GetOpponentCount())
+        print("[SFX] base volume", base_vol, "max reduction", maxReduction)
+        print("[SFX] max opps", maxOpps, "opp count", GetOpponentCount())
         print("[SFX] -> reduction strength", reductionStrength)
         print("[SFX] -> adjusted volume", math.max(finalVolume, 0))
     end
@@ -185,7 +125,7 @@ function AdjustVolume(base_vol) -- stealth volume reduction effect adjustment
     return math.max(finalVolume, 0)
 end
 
-function GetAllInvSwords()
+function GetAllRealSwords()
     local invSwords = {}
 
     for _, ent in ipairs(ents.GetAll()) do
@@ -197,26 +137,20 @@ function GetAllInvSwords()
     return invSwords
 end
 
-function UnTargetSwords() -- if target disconnects
-    for _, sword in ipairs(GetAllInvSwords()) do
-        sword.PrintName = DEFAULT_NAME
+function DebugInspect(obj)
+    print(obj, type(obj))
 
-        if sword.Packed then
-            sword.Primary.ClipSize = 1
-            sword:SetClip1(not sword.StabbedTarget and 1 or 0)
-        end
+    if type(obj) == "table" then
+        PrintTable(obj)
 
-        if CLIENT then
-            sword:UpdateTooltip(false)
-
-            local owner = sword:GetOwner()
-            if IsLivingPlayer(owner) then
-                owner:ChatPrint(DISCONNECT_NOTIF)
-            end
-        end
+    elseif obj.GetTable then
+        PrintTable(obj:GetTable())
     end
 end
 
+----------------------------------
+--- SERVER REALM SETUP / HOOKS ---
+----------------------------------
 if SERVER then
     AddCSLuaFile("weapon_ttt_sopd.lua")
     util.AddNetworkString(SWORD_TARGET_MSG)
@@ -229,57 +163,96 @@ if SERVER then
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
     if DEBUG:GetBool() then print("[SoPD Server] Initializing....") end
 
-    -- Find the target player for this round!
-    hook.Add("TTTBeginRound", HOOK_BEGIN_ROUND, function()
-        local possibleTargetPool, playerCnt = GetPossibleTargetPool()
-        roundTargetPoolSize = #possibleTargetPool
+    function GetPossibleTargetPool()
+        local possibleTargetPool = {}
+        local livingPlayerCnt = 0
 
-        -- Select target player
-        if DEBUG:GetBool() then print("[SoPD Server] Possible targets: ", roundTargetPoolSize, "; player count: ", playerCnt) end
+        for _, ply in ipairs(player.GetAll()) do
+            if IsLivingPlayer(ply) then
+                livingPlayerCnt = livingPlayerCnt + 1
 
-        if roundTargetPoolSize > 0 and playerCnt > 2 then
-            newTarget = possibleTargetPool[math.random(1, roundTargetPoolSize)]
+                if ply:GetTeam() ~= TEAM_TRAITOR
+                    and ply:GetTeam() ~= TEAM_JACKAL
+                    and ply:GetTeam() ~= TEAM_INFECTED
+                    and (CAN_TARGET_JESTERS:GetBool() or ply:GetRole() ~= TEAM_JESTER) then
 
-            --retry just once to make it less likely to pick the same target twice
-            if newTarget == swordTargetPlayer then
-                if DEBUG:GetBool() then print("[SoPD Server] Let's try not to pick the same target twice...") end
-                newTarget = possibleTargetPool[math.random(1, roundTargetPoolSize)]
+                    table.insert(possibleTargetPool, ply)
+                end
             end
-            swordTargetPlayer = newTarget
-
-            if DEBUG:GetBool() then print("[SoPD Server] Chosen sword target: " .. swordTargetPlayer:Nick() .. " (team: " .. swordTargetPlayer:GetTeam() .. ")") end
-        else
-            swordTargetPlayer = nil
-            if DEBUG:GetBool() then print("[SoPD Server] No suitable target; SoPD will target anyone (without preventing damage).") end
         end
 
-        -- Set/update damage resistance hook (updated every round because players may enter/exit deathmatch anytime)
-        hook.Remove("EntityTakeDamage", HOOK_TAKE_DAMAGE)
-        hook.Add("EntityTakeDamage", HOOK_TAKE_DAMAGE, function (target, dmgInfo)
-            local attacker = dmgInfo:GetAttacker()
+        return possibleTargetPool, livingPlayerCnt
+    end
 
-            if HoldsSword(target, true) and IsLivingPlayer(attacker) then
-                local dmgBlock = OTHERS_DMG_BLOCK:GetFloat() / 100
-                if attacker == swordTargetPlayer then
-                    dmgBlock = TARGET_DMG_BLOCK:GetFloat() / 100
-                end
-                if target:GetActiveWeapon().Packed then
-                    dmgBlock = dmgBlock + (PAP_DMG_BLOCK:GetFloat() / 100)
-                end
+    function SendTargetData(to)
+        net.Start(SWORD_TARGET_MSG)
+        net.WritePlayer(swordTarget.player or NULL)
+        net.WriteString(swordTarget.name   or "")
+        net.WriteString(swordTarget.SID64  or "")
 
-                dmgInfo:SetDamage(dmgInfo:GetDamage() * (1 - math.min(1, dmgBlock)))
+        if IsPlayer(to) then
+            net.Send(to)
+        else
+            net.Broadcast()
+        end
+    end
+
+    function DrawTarget()
+        local possibleTargetPool, playerCnt = GetPossibleTargetPool()
+
+        -- Select target player
+        if DEBUG:GetBool() then print("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt) end
+
+
+        if #possibleTargetPool > 0 and playerCnt > 2 then
+            newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
+
+            --retry once to make it less likely to pick the same target twice
+            if newTarget == swordTarget.player then
+                if DEBUG:GetBool() then print("[SoPD Server] Let's try not to pick the same target twice...") end
+                newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
             end
-        end)
+
+            swordTarget.player = newTarget
+            swordTarget.name   = newTarget:Nick()
+            swordTarget.SID64  = newTarget:SteamID64()
+
+            if DEBUG:GetBool() then print("[SoPD Server] Chosen sword target: " .. swordTarget.name .. " (team: " .. swordTarget.player:GetTeam() .. ")") end
+        else
+            if DEBUG:GetBool() then print("[SoPD Server] No suitable target; SoPD will target anyone (without preventing damage).") end
+
+            swordTarget.player = nil
+            swordTarget.name   = nil
+            swordTarget.SID64  = nil
+        end
 
         -- Broadcast chosen player
-        net.Start(SWORD_TARGET_MSG)
-        net.WritePlayer(swordTargetPlayer) --will send default (Entity(0)) if no target
-        net.WriteFloat(roundTargetPoolSize)
-        net.Broadcast()
+        SendTargetData()
+    end
+
+    -- Find the target player for this round!
+    hook.Add("TTTBeginRound", HOOK_BEGIN_ROUND, DrawTarget)
+
+    -- Damage resistance hook
+    hook.Add("EntityTakeDamage", HOOK_TAKE_DAMAGE, function (target, dmgInfo)
+        local attacker = dmgInfo:GetAttacker()
+
+        if HoldsSword(target, true) and IsLivingPlayer(attacker) then
+            local dmgBlock = OTHERS_DMG_BLOCK:GetFloat() / 100
+            if attacker == swordTarget.player then
+                dmgBlock = TARGET_DMG_BLOCK:GetFloat() / 100
+            end
+            if target:GetActiveWeapon().Packed then
+                dmgBlock = dmgBlock + (PAP_DMG_BLOCK:GetFloat() / 100)
+            end
+
+            dmgInfo:SetDamage(dmgInfo:GetDamage() * (1 - math.min(1, dmgBlock)))
+        end
     end)
 
+    -- Communicate target death, adjust/end deploy songs, ragdoll setup
     hook.Add("PlayerDeath", HOOK_PLAYER_DEATH, function(ply, inflictor, attacker)
-        local targetDied = (swordTargetPlayer and ply == swordTargetPlayer)
+        local targetDied = (IsValid(ply) and ply == swordTarget.player)
 
         if targetDied then
             net.Start(TARGET_DIED_MSG)
@@ -291,8 +264,7 @@ if SERVER then
             local wep = p:GetActiveWeapon()
             if IsValid(wep) and wep:GetClass() == CLASS_NAME then
                 if targetDied then
-                    if DEBUG:GetBool() then print("[SFX] Stopping sword deploy sound due to target death | Target: ", swordTargetPlayer:Nick()) end
-                    StopDeploySound(wep)
+                    wep:StopDeploySound("target death")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
                     if DEBUG:GetBool() then print("[SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick()) end
@@ -308,8 +280,9 @@ if SERVER then
         end
     end)
 
+    -- Communicate target respawn, adjust/start deploy songs
     hook.Add("PlayerSpawn", HOOK_PLAYER_SPAWN, function(ply)
-        local targetSpawned = (IsLivingPlayer(swordTargetPlayer) and ply == swordTargetPlayer)
+        local targetSpawned = (IsLivingPlayer(swordTarget.player) and ply == swordTarget.player)
 
         if targetSpawned then
             net.Start(TARGET_SPAWNED_MSG)
@@ -321,8 +294,7 @@ if SERVER then
             local wep = p:GetActiveWeapon()
             if IsValid(wep) and wep:GetClass() == CLASS_NAME then
                 if targetSpawned then
-                    if DEBUG:GetBool() then print("[SFX] Starting sword deploy sound due to target respawn | Target: ", swordTargetPlayer:Nick()) end
-                    StartDeploySound(wep)
+                    wep:StartDeploySound("target respawn")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
                     if DEBUG:GetBool() then print("[SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick()) end
@@ -332,16 +304,21 @@ if SERVER then
         end
     end)
 
-    -- fallback for if the target disconnects (become non-targeted sword)
-    hook.Add("PlayerDisconnected", HOOK_PLAYER_DISCONNECT, function(ply)
-        if ply == swordTargetPlayer then
-            swordTargetPlayer = nil
-            UnTargetSwords()
+    -- Send target data to new clients
+    hook.Add("PlayerInitialSpawn", HOOK_PLAYER_CONNECT, SendTargetData)
 
-            net.Start(SWORD_TARGET_MSG)
-            net.WritePlayer(swordTargetPlayer)
-            net.WriteFloat(roundTargetPoolSize) --(player count at start of round didn't change)
-            net.Broadcast()
+    -- Update target if no sword was used this round
+    hook.Add("PlayerDisconnected", HOOK_PLAYER_DISCONNECT, function(ply)
+        if ply == swordTarget.player then
+            swordTarget.player = nil
+            swordTarget.name   = nil
+            swordTarget.SID64  = nil
+
+            for _, sword in ipairs(GetAllRealSwords()) do
+                sword:UpdateAmmo() --cf. comment on that function
+            end
+
+            SendTargetData()
         end
     end)
 
@@ -358,7 +335,9 @@ if SERVER then
     cvars.AddChangeCallback(LEAVE_DNA:GetName(), descVarChange)
     cvars.AddChangeCallback(ENABLE_TARGET_GLOW:GetName(), descVarChange)
 
-
+----------------------------------
+--- CLIENT REALM SETUP / HOOKS ---
+----------------------------------
 elseif CLIENT then
     if DEBUG:GetBool() then print("[SoPD Client] Initializing....") end
 
@@ -378,38 +357,57 @@ elseif CLIENT then
     curMetaSWEP.DrawCrosshair = false
     curMetaSWEP.UseHands      = true
 
-    net.Receive(SWORD_TARGET_MSG, function(msgLen, ply)
-        local newTarget = net.ReadPlayer()
-        roundTargetPoolSize = net.ReadFloat()
+    net.Receive(SWORD_TARGET_MSG, function(msgLen, sender)
+        local netTargetPlayer = net.ReadPlayer()
+        local netTargetName   = net.ReadString()
+        local netTargetSID    = net.ReadString()
+        swordTarget.player = (IsValid(netTargetPlayer)) and netTargetPlayer or nil
+        swordTarget.name   = (netTargetName ~= "") and netTargetName or nil
+        swordTarget.SID64  = (netTargetSID  ~= "") and netTargetSID or nil
 
-        if newTarget == Entity(0) or not newTarget then
-            if DEBUG:GetBool() then print("[SoPD Client] No sword target") end
+        -- notify player if they own one
+        local localPlayer = LocalPlayer()
 
-            swordTargetPlayer = nil
-            UpdateSwordMeta()
-            UnTargetSwords()
+        if localPlayer:HasWeapon(CLASS_NAME) then
+            local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
+            if swordTarget.player then
+                if DEBUG:GetBool() then print("[SoPD Client] Known sword target: ".. swordTarget.name) end
+                targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
+            else
+                if DEBUG:GetBool() then print("[SoPD Client] No sword target") end
+                targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
+            end
 
-        else
-            if DEBUG:GetBool() then print("[SoPD Client] Known sword target: ".. newTarget:Nick()) end
+            localPlayer:ChatPrint(targetChangeNotif)
+        end
 
-            swordTargetPlayer = newTarget
-            UpdateSwordMeta()
+        -- update sword UI
+        UpdateSwordMeta("target change")
+        for _, sword in ipairs(GetAllRealSwords()) do
+            sword:UpdateUI("target change")
+            sword:UpdateAmmo() --cf. comment on that function
         end
     end)
 
     -- why do I have to do this :(
-    function GetRagdollForPlayer(ply)
-        if not IsValid(ply) then return nil end
-
+    function GetTargetRagdoll()
         for _, ent in ipairs(ents.FindByClass("prop_ragdoll")) do
             if not IsValid(ent) then continue end
 
-            if CORPSE.GetPlayerNick(ent, nil) == ply:Nick() then --this blows!!
+            if CORPSE.GetPlayerNick(ent, nil) == swordTarget.name then --this blows!!
                 return ent
             end
         end
 
         return nil
+    end
+
+    function InPlayerStabRange(ply)
+        if not (IsPlayer(ply)) then return false end
+        local tr = ply:GetEyeTrace(MASK_SHOT)
+        if not (tr.HitNonWorld and IsValid(tr.Entity)) then return false end
+
+        return ply:GetShootPos():Distance(tr.HitPos) <= 110 * RANGE_BUFF:GetFloat() and CanBeStabbed(tr.Entity)
     end
 
     --display halo (through walls if convar is enabled & always if able to kill)
@@ -421,11 +419,11 @@ elseif CLIENT then
             local glowStrength = 1 + (inRange and 1 or 0) --increase strength for kill range
             local glowTarget = {}
 
-            if swordTargetPlayer then
-                if IsLivingPlayer(swordTargetPlayer) then
-                    glowTarget = {swordTargetPlayer}
+            if swordTarget.player then
+                if IsLivingPlayer(swordTarget.player) then
+                    glowTarget = {swordTarget.player}
                 elseif RAGDOLL_STAB_COVERUP:GetBool() then
-                    local targetRag = GetRagdollForPlayer(swordTargetPlayer) --slow & i hate
+                    local targetRag = GetTargetRagdoll() --slow & i hate
                     if IsValid(targetRag) then glowTarget = {targetRag} end
                 end
             elseif inRange then
@@ -442,7 +440,7 @@ elseif CLIENT then
     hook.Add("TTTRenderEntityInfo", HOOK_RENDER_ENTINFO, function(tData)
         local localPlayer = LocalPlayer()
 
-        if CanBeSlain(tData:GetEntity()) and InPlayerStabRange(localPlayer) and HoldsSword(localPlayer, true) then
+        if CanBeStabbed(tData:GetEntity()) and InPlayerStabRange(localPlayer) and HoldsSword(localPlayer, true) then
             local role_color = localPlayer:GetRoleColor()
             local insta_label = "sopd_instantkill"
             if localPlayer:GetActiveWeapon().Packed then
@@ -488,71 +486,25 @@ elseif CLIENT then
         end
     end)
 
-    net.Receive(TARGET_DIED_MSG, function()
-        for _, sword in ipairs(GetAllInvSwords()) do
-            sword:UpdateTooltip(false)
-        end
-    end)
-
-    net.Receive(TARGET_SPAWNED_MSG, function()
-        for _, sword in ipairs(GetAllInvSwords()) do
-            sword:UpdateTooltip(true)
-        end
-    end)
-
-    function SWEP:UpdateTooltip(targetAlive)
-        --TODO properly handle PaP here so "Inhale yourself?" can show up
-        if self.Packed or not roundTargetPoolSize then return end
-
-        if DEBUG:GetBool() then print("Updating sword tooltip...") end
-        self:ClearHUDHelp()
-
-        if self:GetOwner() == swordTargetPlayer then
-            self:AddTTT2HUDHelp("sopd_instruction_for_target")
-            return
-        end
-
-        if roundTargetPoolSize < 2 then
-            self:AddTTT2HUDHelp("sopd_instruction_targetless")
-            return
-        end
-
-        if swordTargetPlayer then
-            if targetAlive then
-                self:AddTTT2HUDHelp("sopd_instruction_targeted")
-            else
-                if RAGDOLL_STAB_COVERUP:GetBool() then
-                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
-                else
-                    self:AddTTT2HUDHelp("sopd_instruction_stab")
-                end
-                --TODO "cant do shit" instruction for if the corpse is gone
+    function UpdateAllUIsDelayed()
+        --target may not be considered dead/living yet
+        timer.Simple(0.1, function()
+            for _, sword in ipairs(GetAllRealSwords()) do
+                sword:UpdateUI("target died/revived")
             end
-        else
-            self:AddTTT2HUDHelp("sopd_instruction_targetless")
-        end
+        end)
     end
+    net.Receive(TARGET_DIED_MSG, UpdateAllUIsDelayed)
+    net.Receive(TARGET_SPAWNED_MSG, UpdateAllUIsDelayed)
 
-    function SWEP:Initialize() --on buy (local to 1 player)
-        self:UpdateTooltip(IsLivingPlayer(swordTargetPlayer))
+    -- update sword's shop & initialization info
+    function UpdateSwordMeta(reason)
+        if DEBUG:GetBool() then print("Updating sword meta... ("..reason..")") end
 
-        -- chat notification if you buy sword after the target disconnects
-        local localPlayer = LocalPlayer()
+        -- update description (text-building logic yippie)
+        local desc = ""
 
-        if not swordTargetPlayer and roundTargetPoolSize and
-          roundTargetPoolSize > 1 and localPlayer:GetRole() != ROLE_DEATHMATCHER then
-            localPlayer:ChatPrint(DISCONNECT_NOTIF)
-        end
-
-        return self.BaseClass.Initialize(self)
-    end
-
-    -- update name & shop info; called for OG instance only
-    function UpdateSwordMeta()
-        -- update shop description (text-building logic yippie)
-        desc = ""
-
-        if swordTargetPlayer then
+        if swordTarget.player then
             local dmgReductionDesc = ""
             local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
             if targetDmgBlock == 100 then
@@ -588,7 +540,7 @@ elseif CLIENT then
                 dmgReductionDesc = dmgReductionDesc .. ". "
             end
 
-            desc = "Swing to instantly and loudly defeat " .. swordTargetPlayer:Nick() .. ". " .. dmgReductionDesc .. "What a triumph is that!\n\n"
+            desc = "Swing to instantly and loudly defeat " .. swordTarget.name .. ". " .. dmgReductionDesc .. "What a triumph is that!\n\n"
 
         else
             desc = "The Sword failed to pick a target, but it'll still loudly defeat a player. What a triumph is that!\n\n"
@@ -599,17 +551,17 @@ elseif CLIENT then
             local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
             desc = desc .. "• ".. speedStr .. "x speed multiplier\n"
         end
-        if swordTargetPlayer and ENABLE_TARGET_GLOW:GetBool() then
-            desc = desc .. "• Can see " .. swordTargetPlayer:Nick() .. "'s outline through walls\n"
+        if swordTarget.player and ENABLE_TARGET_GLOW:GetBool() then
+            desc = desc .. "• Can see " .. swordTarget.name .. "'s outline through walls\n"
         end
-        if swordTargetPlayer and TARGET_DMG_BLOCK:GetFloat() > 0 then
+        if swordTarget.player and TARGET_DMG_BLOCK:GetFloat() > 0 then
             local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
-            desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTargetPlayer:Nick() .. "\n"
+            desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTarget.name .. "\n"
         end
         if OTHERS_DMG_BLOCK:GetFloat() > 0 then
             local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. allBlockStr .. "% of "
-            if swordTargetPlayer then
+            if swordTarget.player then
                 if TARGET_DMG_BLOCK:GetFloat() > 0 then
                     desc = desc .. "damage from others\n"
                 else
@@ -625,8 +577,8 @@ elseif CLIENT then
         else
             desc = desc .. "Leaves no DNA. "
         end
-        if swordTargetPlayer and RAGDOLL_STAB_COVERUP:GetBool() then
-            desc = desc .. "If " .. swordTargetPlayer:Nick() .. " is dead, you can stab their corpse to destroy evidence"
+        if swordTarget.player and RAGDOLL_STAB_COVERUP:GetBool() then
+            desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to destroy evidence"
             if not LEAVE_DNA:GetBool() then
                 desc = desc .. " and remove DNA"
             end
@@ -639,28 +591,45 @@ elseif CLIENT then
         --update SWEP's name
         local name = ""
 
-        if swordTargetPlayer then
-            name = "Sword of ".. swordTargetPlayer:Nick() .. " Defeat"
+        if swordTarget.player then
+            name = "Sword of ".. swordTarget.name .. " Defeat"
 
-            local tgtNick = string.lower(swordTargetPlayer:Nick())
-            if tgtNick == "king dedede" or tgtNick == "dedede" then
+            local lowerName = string.lower(swordTarget.name)
+            if lowerName == "king dedede" or lowerName == "dedede" then
                 name = name .. "!"
             end
         else
             name = DEFAULT_NAME
         end
 
-        regMetaSWEP.PrintName = name
-        curMetaSWEP.PrintName = name
+        regMetaSWEP.PrintName = name --update shop name
+        curMetaSWEP.PrintName = name --init new swords with right name
     end
 
     net.Receive(CVAR_UPDATE_MSG, function()
-        UpdateSwordMeta()
+        UpdateSwordMeta("cvar change")
     end)
 
-    UpdateSwordMeta()
+    --harmless; helps w/ hot-reloading
+    UpdateSwordMeta("lua load")
 end
 
+----------------------------------
+---------- SHARED HOOKS ----------
+----------------------------------
+hook.Add("TTTPlayerSpeedModifier", HOOK_SPEEDMOD, function(ply, _, _, noLag )
+    if HoldsSword(ply, false) then
+        if TTT2 then
+            noLag[1] = noLag[1] * HOLDER_SPEEDUP:GetFloat()
+        else
+            return HOLDER_SPEEDUP:GetFloat()
+        end
+    end
+end)
+
+----------------------------------
+---- SHARED SWEP INIT & DEFS -----
+----------------------------------
 SWEP.Base         = "weapon_tttbase"
 SWEP.HoldType     = "melee"
 SWEP.ViewModel    = SWORD_VIEWMODEL
@@ -682,6 +651,10 @@ SWEP.IsSilent    = true --(negated by the noises we add lol)
 SWEP.AllowDrop   = true
 SWEP.DeploySpeed = 2
 
+function SWEP:CanStab()
+    return self.Primary.ClipSize == -1 or self:Clip1() > 0
+end
+
 function SWEP:PrimaryAttack()
     self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
     self:EmitSound(sounds["swing"])
@@ -698,7 +671,7 @@ function SWEP:PrimaryAttack()
 
     -- raycast to get entity hit by sword, ignoring owner & other swords
     local function SwordTraceFilter(ent)
-        return ent:GetModel() != SWORD_WORLDMODEL and (ent != owner or owner == swordTargetPlayer)
+        return ent:GetModel() != SWORD_WORLDMODEL and (ent != owner or owner == swordTarget.player)
     end
 
     local tr = util.TraceHull({start=spos, endpos=sdest, filter=SwordTraceFilter, mask=MASK_SHOT_HULL, mins=kmins, maxs=kmaxs})
@@ -709,7 +682,7 @@ function SWEP:PrimaryAttack()
     end
 
     local hitEnt = tr.Entity
-    if DEBUG:GetBool() then print("SoPD Primary Hit Entity", hitEnt) end
+    if DEBUG:GetBool() then print("SoPD Primary hit entity:", hitEnt) end
 
     -- effects
     if IsValid(hitEnt) then
@@ -721,7 +694,7 @@ function SWEP:PrimaryAttack()
         edata:SetNormal(tr.Normal)
         edata:SetEntity(hitEnt)
 
-        if CanBeSlain(hitEnt) or hitEnt:GetClass() == "prop_ragdoll" then
+        if CanBeStabbed(hitEnt) or hitEnt:GetClass() == "prop_ragdoll" then
             util.Effect("BloodImpact", edata)
         end
     else
@@ -731,15 +704,56 @@ function SWEP:PrimaryAttack()
     if SERVER then
         owner:SetAnimation(PLAYER_ATTACK1)
 
-        if DEBUG:GetBool() then print("SoPD Primary Attack Check 1:", self:CanStab(), tr.Hit, tr.HitNonWorld, IsValid(hitEnt)) end
+        --to make debug code more readable
+        local CAN_STAB      = self:CanStab()
+        local IS_HIT        = tr.Hit
+        local HIT_NOT_WORLD = tr.HitNonWorld
+        local HIT_ENT_VALID = IsValid(hitEnt)
+        local preReqs = CAN_STAB and IS_HIT and HIT_NOT_WORLD and HIT_ENT_VALID
 
-        if self:CanStab() and tr.Hit and tr.HitNonWorld and IsValid(hitEnt) then
-            if DEBUG:GetBool() then print("SoPD Primary Attack Check 2:", CanBeSlain(hitEnt), hitEnt:GetClass() == "prop_ragdoll", hitEnt:IsPlayerRagdoll(), CanBeSlain(hitEnt.PlyOwner), swordTargetPlayer or self.Packed, "from", swordTargetPlayer and 1 or 0, self.Packed) end
+        if DEBUG:GetBool() then
+            print("SoPD Primary Attack Checks:\n• PREREQS - ".. tostring(preReqs)
+                .. " -> sword can stab: " .. tostring(CAN_STAB)
+                .. " & trace hit: "       .. tostring(IS_HIT)
+                .. " & non-world: "       .. tostring(HIT_NOT_WORLD)
+                .. " & valid entity: "           .. tostring(HIT_ENT_VALID))
+        end
 
-            if CanBeSlain(hitEnt) and owner:GetTeam() != TEAM_JESTER then
+        if preReqs then
+            local CAN_STAB_ENT     = CanBeStabbed(hitEnt)
+            local OWNER_NOT_JESTER = owner:GetTeam() != TEAM_JESTER
+            local isKill = CAN_STAB_ENT and OWNER_NOT_JESTER
+
+            if DEBUG:GetBool() then
+                print("• KILL - " .. tostring(isKill)
+                    .. " -> can stab ent: "     .. tostring(CAN_STAB_ENT)
+                    .. " & owner is not jest: " .. tostring(OWNER_NOT_JESTER))
+            end
+
+            if isKill then
                 self:StabKill(tr, spos, sdest)
-            elseif hitEnt:GetClass() == "prop_ragdoll" and hitEnt:IsPlayerRagdoll() and CanBeSlain(hitEnt.PlyOwner) and (swordTargetPlayer or self.Packed) then
-                self:StabRagdoll(tr, spos, sdest)
+
+            else
+                local IS_RAG        = hitEnt:GetClass() == "prop_ragdoll"
+                local IS_PLAYER_RAG = hitEnt:IsPlayerRagdoll()
+                local TARGET_MATCH = swordTarget.player ~= nil and (hitEnt.PlyOwner == swordTarget.player)
+                if hitEnt.scene and hitEnt.scene.plySID64 == swordTarget.SID64 then
+                    TARGET_MATCH = true
+                end
+                local UNTARGET_PAP = swordTarget.player == nil and self.Packed == true
+                local isRagStab = IS_RAG and IS_PLAYER_RAG and (TARGET_MATCH or UNTARGET_PAP)
+
+                if DEBUG:GetBool() then
+                    print("• RAGSTAB - " .. tostring(isRagStab)
+                        .. " -> is ragdoll: "         .. tostring(IS_RAG)
+                        .. " & is of player: "        .. tostring(IS_PLAYER_RAG)
+                        .. " & target match: "        .. tostring(TARGET_MATCH)
+                        .. " | targetless pap: "      .. tostring(UNTARGET_PAP))
+                end
+
+                if isRagStab then
+                    self:StabRagdoll(tr, spos, sdest)
+                end
             end
         end
     end
@@ -747,342 +761,419 @@ function SWEP:PrimaryAttack()
     owner:LagCompensation(false)
 end
 
-function SWEP:CanStab()
-    return self.Primary.ClipSize == -1 or self:Clip1() > 0
-end
-
-local function adjStuckSwordAngle(norm)
-    local ang = norm:Angle()
-    ang:RotateAroundAxis(ang:Up(), 180)
-    return ang
-end
-
-local function adjStuckSwordPos(retr, ang)
-    return retr.HitPos + (ang:Forward() * 10)
-end
-
-function SWEP:StabKill(tr, spos, sdest)
-    --arg2/3 = shooting origin/dest world positions
-    --serverside only
-    local target = tr.Entity
-    local owner = self:GetOwner()
-
-    --wish I knew how to make this not ugly (TODO?)
-    local packEffect = self.PackEffect
-    local swepRef = self
-
-    -- damage to killma player
-    local dmg = DamageInfo()
-    dmg:SetDamage(12047)
-    if LEAVE_DNA:GetBool() or target:GetTeam() == TEAM_JESTER then
-        dmg:SetAttacker(owner)
-    end
-    dmg:SetInflictor(self)
-    dmg:SetDamageForce(owner:GetAimVector())
-    dmg:SetDamagePosition(owner:GetPos())
-    dmg:SetDamageType(DMG_SLASH)
-
-    -- raycast to get entity hit by sword (which should be a player's limb)
-    local retr = util.TraceLine({start=spos, endpos=sdest, filter=owner, mask=MASK_SHOT_HULL})
-    if retr.Entity != target then
-        local center = target:LocalToWorld(target:OBBCenter())
-        retr = util.TraceLine({start=spos, endpos=center, filter=owner, mask=MASK_SHOT_HULL})
-    end
-
-    -- create knife effect creation fn
-    local bone = retr.PhysicsBone
-    local norm = tr.Normal
-    local ang = adjStuckSwordAngle(norm)
-    local pos = adjStuckSwordPos(retr, ang)
-
-    target.effect_fn = function(rag)
-        local stuckSword
-
-        if not packEffect then
-            -- redo raycast from previously hit point (we might find a better location)
-            local rtr = util.TraceLine({start=pos, endpos=pos + norm * 40, filter=owner, mask=MASK_SHOT_HULL})
-
-            if IsValid(rtr.Entity) and rtr.Entity == rag then
-                bone = rtr.PhysicsBone
-                ang = adjStuckSwordAngle(rtr.Normal)
-                pos = adjStuckSwordPos(rtr, ang)
-            end
-
-            stuckSword = ents.Create("prop_physics")
-            stuckSword:SetModel(SWORD_WORLDMODEL)
-            stuckSword:SetPos(pos)
-            stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
-            stuckSword:SetAngles(ang)
-            stuckSword.CanPickup = false
-            stuckSword:Spawn()
-
-            local phys = stuckSword:GetPhysicsObject()
-            if IsValid(phys) then phys:EnableCollisions(false) end
-            constraint.Weld(rag, stuckSword, bone, 0, 0, true)
-
-            -- need to close over sword in order to keep a valid ref to it
-            rag:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
-        end
-
-        -- play slay noise from stuck sword
-        net.Start(SWORD_KILLED_MSG)
-        net.WriteBool(packEffect)
-        net.WriteEntity(stuckSword)
-        net.Broadcast()
-        if packEffect then packEffect(swepRef, rag, owner) end
-        if DEBUG:GetBool() then print("[SWORD_KILLED_MSG] Sent") end
-    end
-
-    --dispatch killing attack, trigger sword sticking function & clean up
-    target:DispatchTraceAttack(dmg, spos + (owner:GetAimVector() * 3), sdest)
-    self:Consume(false)
-end
-
-function SWEP:StabRagdoll(tr, spos, sdest)
-    local hitRagdoll = tr.Entity
-
-    if not self.Packed then
-        local ang = adjStuckSwordAngle(tr.Normal)
-        local pos = adjStuckSwordPos(tr, ang)
-        local stabVol = 0.2
-
-        local stuckSword = ents.Create("prop_physics")
-        stuckSword:SetModel(SWORD_WORLDMODEL)
-        stuckSword:SetPos(pos)
-        stuckSword:SetAngles(ang)
-        stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
-        stuckSword.CanPickup = false
-        stuckSword:Spawn()
-
-        local phys = stuckSword:GetPhysicsObject()
-        if IsValid(phys) then phys:EnableCollisions(false) end
-
-        constraint.Weld(hitRagdoll, stuckSword, tr.PhysicsBone or 0, 0, 0, true)
-        hitRagdoll:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
-
-        -- concealing death cause here if enabled
-        if RAGDOLL_STAB_COVERUP:GetBool() then
-            --gameplay relevant mechanic should have SOME risk
-            stabVol = math.max(stabVol, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100))
-
-            hitRagdoll.was_headshot = false
-            hitRagdoll.dmgwep = CLASS_NAME
-            hitRagdoll.dmgtype = DMG_SLASH
-            hitRagdoll.scene.lastDamage = 12047
-            hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
-            hitRagdoll.scene.waterLevel = 0
-            if not LEAVE_DNA:GetBool() then hitRagdoll.killer_sample = nil end
-        end
-
-        local stabSnd = "rag_stab1"
-        if math.random() > 0.8 then stabSnd = "rag_stab2" end
-
-        if DEBUG:GetBool() then print("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol) end
-        stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
-    end
-
-    self:Consume(true, hitRagdoll)
-end
-
-function SWEP:Consume(doPap, rag)
-    if DEBUG:GetBool() then print("[SFX] Stopping deploy sound due to consumption") end
-    StopDeploySound(self)
-
-    if swordTargetPlayer then
-        self.StabbedTarget = true
-    end
-
-    if self.Packed then
-        if self.Primary.ClipSize != -1 then
-            self:SetClip1(0)
-        end
-
-        if doPap and rag and not self.packVictim then
-            self:PackEffect(rag, self:GetOwner())
-        end
-    else
-        self:Remove()
-    end
-end
-
-function SWEP:SecondaryAttack()
-end
-
-function SWEP:Equip()
-    self:SetNextPrimaryFire(CurTime() + (self.Primary.Delay * 1.5))
-end
-
-function SWEP:PreDrop()
-    if DEBUG:GetBool() then print("[SFX] Stopping deploy sound due to item drop") end
-    StopDeploySound(self)
-    self.fingerprints = {}
-end
-
 function SWEP:OnRemove()
-    if CLIENT and IsValid(self:GetOwner()) 
-      and self:GetOwner() == LocalPlayer() 
+    if CLIENT and IsValid(self:GetOwner())
+      and self:GetOwner() == LocalPlayer()
       and self:GetOwner():Alive() then
         RunConsoleCommand("lastinv")
     end
 end
 
-function SWEP:AddToSettingsMenu(parent)
-    local formMain = vgui.CreateTTT2Form(parent, "label_sopd_main_form")
-
-    formMain:MakeHelp({
-        label = "label_sopd_range_buff_desc"
-    })
-    formMain:MakeSlider({
-        serverConvar = "ttt2_sopd_range_buff",
-        label = "label_sopd_range_buff",
-        min = 0.1,
-        max = 5,
-        decimal = 1
-    })
-
-    formMain:MakeSlider({
-        serverConvar = "ttt2_sopd_speedup",
-        label = "label_sopd_speedup",
-        min = 1,
-        max = 5,
-        decimal = 1
-    })
-
-    formMain:MakeCheckBox({
-        serverConvar = "ttt2_sopd_leave_dna",
-        label = "label_sopd_leave_dna"
-    })
-    formMain:MakeCheckBox({
-        serverConvar = "ttt2_sopd_destroy_evidence",
-        label = "label_sopd_destroy_evidence"
-    })
-    formMain:MakeCheckBox({
-        serverConvar = "ttt2_sopd_target_glow",
-        label = "label_sopd_target_glow"
-    })
-    formMain:MakeCheckBox({
-        serverConvar = "ttt2_sopd_can_target_jesters",
-        label = "label_sopd_can_target_jesters"
-    })
-
-    formMain:MakeHelp({
-        label = "label_sopd_dmg_block_desc"
-    })
-    formMain:MakeSlider({
-        serverConvar = "ttt2_sopd_target_dmg_block",
-        label = "label_sopd_target_dmg_block",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-    formMain:MakeSlider({
-        serverConvar = "ttt2_sopd_others_dmg_block",
-        label = "label_sopd_others_dmg_block",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-
-    local formPaP = vgui.CreateTTT2Form(parent, "label_sopd_pap_form")
-    formPaP:MakeSlider({
-        serverConvar = "ttt2_sopd_pap_heal",
-        label = "label_sopd_pap_heal",
-        min = 0,
-        max = 200,
-        decimal = 0
-    })
-    formPaP:MakeHelp({
-        label = "label_sopd_pap_dmg_block_desc"
-    })
-    formPaP:MakeSlider({
-        serverConvar = "ttt2_sopd_pap_dmg_block",
-        label = "label_sopd_pap_dmg_block",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-
-    local formSFX = vgui.CreateTTT2Form(parent, "label_sopd_sfx_form")
-    formSFX:MakeHelp({
-        label = "label_sopd_sfx_deploy_soundlevel_desc"
-    })
-    formSFX:MakeSlider({
-        serverConvar = "ttt2_sopd_sfx_deploy_soundlevel",
-        label = "label_sopd_sfx_deploy_soundlevel",
-        min = 0,
-        max = 300,
-        decimal = 0
-    })
-    formSFX:MakeHelp({
-        label = "label_sopd_sfx_volume_desc"
-    })
-    formSFX:MakeSlider({
-        serverConvar = "ttt2_sopd_sfx_deploy_volume",
-        label = "label_sopd_sfx_deploy_volume",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-    formSFX:MakeSlider({
-        serverConvar = "ttt2_sopd_sfx_kill_volume",
-        label = "label_sopd_sfx_kill_volume",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-    formSFX:MakeCheckBox({
-        serverConvar = "ttt2_sopd_sfx_oatmeal_for_last",
-        label = "label_sopd_sfx_oatmeal_for_last"
-    })
-    formSFX:MakeHelp({
-        label = "label_sopd_sfx_stealth_desc"
-    })
-    formSFX:MakeSlider({
-        serverConvar = "ttt2_sopd_sfx_stealth_vol_reduction",
-        label = "label_sopd_sfx_stealth_vol_reduction",
-        min = 0,
-        max = 100,
-        decimal = 0
-    })
-    formSFX:MakeSlider({
-        serverConvar = "ttt2_sopd_sfx_stealth_max_opps",
-        label = "label_sopd_sfx_stealth_max_opps",
-        min = 2,
-        max = 24,
-        decimal = 0
-    })
-
-    local formMisc = vgui.CreateTTT2Form(parent, "label_sopd_misc_form")
-    formMisc:MakeCheckBox({
-        serverConvar = "ttt2_sopd_give_guy_access",
-        label = "label_sopd_give_guy_access"
-    })
-    formMisc:MakeCheckBox({
-        serverConvar = "ttt2_sopd_debug",
-        label = "label_sopd_debug"
-    })
-end
-
 function SWEP:Deploy()
     self.Weapon:SendWeaponAnim(ACT_VM_DRAW)
 
-    if DEBUG:GetBool() then print("[SFX] Starting deploy sound due to deploy") end
-    StartDeploySound(self)
+    if SERVER then
+        self:StartDeploySound("deploy")
+    end
     return true
 end
 
 function SWEP:Holster()
-    if DEBUG:GetBool() then print("[SFX] Stopping deploy sound due to holster") end
-    StopDeploySound(self)
+    if SERVER then
+        self:StopDeploySound("holster")
+    end
     return true
 end
 
-hook.Add("TTTPlayerSpeedModifier", HOOK_SPEEDMOD, function(ply, _, _, noLag )
-    if HoldsSword(ply, false) then
-        if TTT2 then
-            noLag[1] = noLag[1] * HOLDER_SPEEDUP:GetFloat()
+function SWEP:UpdateAmmo()
+    -- Existing PaP'd swords needs to have ammo updated if sword becomes targetless
+    -- Note: Not needed the other way around since a round without a target will never "gain" a target (no need to call after setting/changing target or to make the sword ammo-less again)
+    if self.Packed then
+        self.Primary.ClipSize = 1
+        self:SetClip1(not self.StabbedTarget and 1 or 0)
+    end
+end
+
+----------------------------------
+----- SERVER REALM SWEP DEFS -----
+----------------------------------
+if SERVER then
+    function SWEP:Equip(newOwner)
+        self:SetNextPrimaryFire(CurTime() + (self.Primary.Delay * 1.5))
+    end
+
+    function SWEP:PreDrop()
+        --below probably not needed, holster should handle all cases
+        self:StopDeploySound("item drop")
+        self.fingerprints = {}
+    end
+
+    local function adjStuckSwordAngle(norm)
+        local ang = norm:Angle()
+        ang:RotateAroundAxis(ang:Up(), 180)
+        return ang
+    end
+
+    local function adjStuckSwordPos(retr, ang)
+        return retr.HitPos + (ang:Forward() * 10)
+    end
+
+    function SWEP:StabKill(tr, spos, sdest)
+        --arg2/3 = shooting origin/dest world positions
+        local target = tr.Entity
+        local owner = self:GetOwner()
+
+        --wish I knew how to make this not ugly (TODO?)
+        local packEffect = self.PackEffect
+        local swepRef = self
+
+        -- damage to killma player
+        local dmg = DamageInfo()
+        dmg:SetDamage(12047)
+        if LEAVE_DNA:GetBool() or target:GetTeam() == TEAM_JESTER then
+            dmg:SetAttacker(owner)
+        end
+        dmg:SetInflictor(self)
+        dmg:SetDamageForce(owner:GetAimVector())
+        dmg:SetDamagePosition(owner:GetPos())
+        dmg:SetDamageType(DMG_SLASH)
+
+        -- raycast to get entity hit by sword (which should be a player's limb)
+        local retr = util.TraceLine({start=spos, endpos=sdest, filter=owner, mask=MASK_SHOT_HULL})
+        if retr.Entity != target then
+            local center = target:LocalToWorld(target:OBBCenter())
+            retr = util.TraceLine({start=spos, endpos=center, filter=owner, mask=MASK_SHOT_HULL})
+        end
+
+        -- create knife effect creation fn
+        local bone = retr.PhysicsBone
+        local norm = tr.Normal
+        local ang = adjStuckSwordAngle(norm)
+        local pos = adjStuckSwordPos(retr, ang)
+
+        target.effect_fn = function(rag)
+            local stuckSword
+
+            if not packEffect then
+                -- redo raycast from previously hit point (we might find a better location)
+                local rtr = util.TraceLine({start=pos, endpos=pos + norm * 40, filter=owner, mask=MASK_SHOT_HULL})
+
+                if IsValid(rtr.Entity) and rtr.Entity == rag then
+                    bone = rtr.PhysicsBone
+                    ang = adjStuckSwordAngle(rtr.Normal)
+                    pos = adjStuckSwordPos(rtr, ang)
+                end
+
+                stuckSword = ents.Create("prop_physics")
+                stuckSword:SetModel(SWORD_WORLDMODEL)
+                stuckSword:SetPos(pos)
+                stuckSword:SetAngles(ang)
+                stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
+                stuckSword.CanPickup = false
+                stuckSword:Spawn()
+
+                local phys = stuckSword:GetPhysicsObject()
+                if IsValid(phys) then phys:EnableCollisions(false) end
+                constraint.Weld(rag, stuckSword, bone, 0, 0, true)
+
+                -- need to close over sword in order to keep a valid ref to it
+                rag:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+            end
+
+            -- play slay noise from stuck sword
+            net.Start(SWORD_KILLED_MSG)
+            net.WriteBool(packEffect)
+            net.WriteEntity(stuckSword)
+            net.Broadcast()
+            if packEffect then packEffect(swepRef, rag, owner) end
+            if DEBUG:GetBool() then print("[SWORD_KILLED_MSG] Sent") end
+        end
+
+        --dispatch killing attack, trigger sword sticking function & clean up
+        target:DispatchTraceAttack(dmg, spos + (owner:GetAimVector() * 3), sdest)
+        self.KilledTarget = true
+        self:Consume(false)
+    end
+
+    function SWEP:StabRagdoll(tr, spos, sdest)
+        local hitRagdoll = tr.Entity
+
+        if not self.Packed then
+            local ang = adjStuckSwordAngle(tr.Normal)
+            local pos = adjStuckSwordPos(tr, ang)
+            local stabVol = 0.2
+
+            local stuckSword = ents.Create("prop_physics")
+            stuckSword:SetModel(SWORD_WORLDMODEL)
+            stuckSword:SetPos(pos)
+            stuckSword:SetAngles(ang)
+            stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
+            stuckSword.CanPickup = false
+            stuckSword:Spawn()
+
+            local phys = stuckSword:GetPhysicsObject()
+            if IsValid(phys) then phys:EnableCollisions(false) end
+
+            constraint.Weld(hitRagdoll, stuckSword, tr.PhysicsBone or 0, 0, 0, true)
+            hitRagdoll:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+
+            -- concealing death cause here if enabled
+            if RAGDOLL_STAB_COVERUP:GetBool() then
+                --gameplay relevant mechanic should have SOME risk
+                stabVol = math.max(stabVol, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100))
+
+                hitRagdoll.was_headshot = false
+                hitRagdoll.dmgwep = CLASS_NAME
+                hitRagdoll.dmgtype = DMG_SLASH
+                hitRagdoll.scene.lastDamage = 12047
+                hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
+                hitRagdoll.scene.waterLevel = 0
+                if not LEAVE_DNA:GetBool() then hitRagdoll.killer_sample = nil end
+            end
+
+            local stabSnd = "rag_stab1"
+            if math.random() > 0.8 then stabSnd = "rag_stab2" end
+
+            if DEBUG:GetBool() then print("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol) end
+            stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
+        end
+
+        self:Consume(true, hitRagdoll)
+    end
+
+    function SWEP:Consume(doPap, rag)
+        self:StopDeploySound("consumption")
+
+        if swordTarget.player then
+            self.StabbedTarget = true
+        end
+
+        if self.Packed then
+            if self.Primary.ClipSize != -1 then
+                self:SetClip1(0)
+            end
+
+            if doPap and rag and not self.packVictim then
+                self:PackEffect(rag, self:GetOwner())
+            end
         else
-            return HOLDER_SPEEDUP:GetFloat()
+            self:Remove()
         end
     end
-end)
+
+    function SWEP:StartDeploySound(reason)
+        if self.DeploySound and self.DeploySound:IsPlaying() then
+            if DEBUG:GetBool() then
+                print("[SFX] Not starting deploy sound caused by "..reason.." - song already playing.")
+            end
+            return
+        end
+
+        local owner = self:GetOwner()
+
+        if IsValid(owner) and self:CanStab()
+          and (IsLivingPlayer(swordTarget.player) or not swordTarget.player) then
+            if DEBUG:GetBool() then print("[SFX] Starting deploy sound due to "..reason) end
+
+            local deploySnd = "gourmet"
+            if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
+                deploySnd = "oatmeal"
+            end
+
+            self.DeploySound = CreateSound(owner, sounds[deploySnd])
+            self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
+            self.DeploySound:PlayEx(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100), 100)
+        elseif DEBUG:GetBool() then
+            print("[SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
+        end
+    end
+
+    function SWEP:StopDeploySound(reason)
+        if self.DeploySound and self.DeploySound:IsPlaying() then
+            if DEBUG:GetBool() then print("[SFX] Stopping deploy sound due to "..reason) end
+            self.DeploySound:Stop()
+            self.DeploySound = nil
+
+        elseif DEBUG:GetBool() then
+            print("[SFX] Not stopping deploy caused by "..reason.." - song not playing.")
+        end
+    end
+
+
+----------------------------------
+----- CLIENT REALM SWEP DEFS -----
+----------------------------------
+elseif CLIENT then
+
+    function SWEP:Initialize() --on buy
+        self:UpdateUI("initialize")
+        return self.BaseClass.Initialize(self)
+    end
+
+    function SWEP:UpdateUI(reason)
+        if self.Packed then return end
+        if DEBUG:GetBool() then print("Updating sword UI... ("..reason..")") end
+
+        --TODO properly handle PaP here so "Inhale yourself?" can show up
+        self.PrintName = curMetaSWEP.PrintName
+        self:ClearHUDHelp()
+
+        if self:GetOwner() == swordTarget.player then
+            self:AddTTT2HUDHelp("sopd_instruction_for_target")
+            return
+        end
+
+        if swordTarget.player then
+            if IsLivingPlayer(swordTarget.player) then
+                self:AddTTT2HUDHelp("sopd_instruction_targeted")
+            else
+                if RAGDOLL_STAB_COVERUP:GetBool() then
+                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                else
+                    self:AddTTT2HUDHelp("sopd_instruction_stab")
+                end
+                --TODO "cant do shit" instruction for if the corpse is gone
+                -- (can happen via flare gun or inhaling a disconnected player)
+            end
+        else
+            self:AddTTT2HUDHelp("sopd_instruction_targetless")
+        end
+    end
+
+    function SWEP:AddToSettingsMenu(parent)
+        local formMain = vgui.CreateTTT2Form(parent, "label_sopd_main_form")
+
+        formMain:MakeHelp({
+            label = "label_sopd_range_buff_desc"
+        })
+        formMain:MakeSlider({
+            serverConvar = "ttt2_sopd_range_buff",
+            label = "label_sopd_range_buff",
+            min = 0.1,
+            max = 5,
+            decimal = 1
+        })
+
+        formMain:MakeSlider({
+            serverConvar = "ttt2_sopd_speedup",
+            label = "label_sopd_speedup",
+            min = 1,
+            max = 5,
+            decimal = 1
+        })
+
+        formMain:MakeCheckBox({
+            serverConvar = "ttt2_sopd_leave_dna",
+            label = "label_sopd_leave_dna"
+        })
+        formMain:MakeCheckBox({
+            serverConvar = "ttt2_sopd_destroy_evidence",
+            label = "label_sopd_destroy_evidence"
+        })
+        formMain:MakeCheckBox({
+            serverConvar = "ttt2_sopd_target_glow",
+            label = "label_sopd_target_glow"
+        })
+        formMain:MakeCheckBox({
+            serverConvar = "ttt2_sopd_can_target_jesters",
+            label = "label_sopd_can_target_jesters"
+        })
+
+        formMain:MakeHelp({
+            label = "label_sopd_dmg_block_desc"
+        })
+        formMain:MakeSlider({
+            serverConvar = "ttt2_sopd_target_dmg_block",
+            label = "label_sopd_target_dmg_block",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+        formMain:MakeSlider({
+            serverConvar = "ttt2_sopd_others_dmg_block",
+            label = "label_sopd_others_dmg_block",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+
+        local formPaP = vgui.CreateTTT2Form(parent, "label_sopd_pap_form")
+        formPaP:MakeSlider({
+            serverConvar = "ttt2_sopd_pap_heal",
+            label = "label_sopd_pap_heal",
+            min = 0,
+            max = 200,
+            decimal = 0
+        })
+        formPaP:MakeHelp({
+            label = "label_sopd_pap_dmg_block_desc"
+        })
+        formPaP:MakeSlider({
+            serverConvar = "ttt2_sopd_pap_dmg_block",
+            label = "label_sopd_pap_dmg_block",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+
+        local formSFX = vgui.CreateTTT2Form(parent, "label_sopd_sfx_form")
+        formSFX:MakeHelp({
+            label = "label_sopd_sfx_deploy_soundlevel_desc"
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_deploy_soundlevel",
+            label = "label_sopd_sfx_deploy_soundlevel",
+            min = 0,
+            max = 300,
+            decimal = 0
+        })
+        formSFX:MakeHelp({
+            label = "label_sopd_sfx_volume_desc"
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_deploy_volume",
+            label = "label_sopd_sfx_deploy_volume",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_kill_volume",
+            label = "label_sopd_sfx_kill_volume",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+        formSFX:MakeCheckBox({
+            serverConvar = "ttt2_sopd_sfx_oatmeal_for_last",
+            label = "label_sopd_sfx_oatmeal_for_last"
+        })
+        formSFX:MakeHelp({
+            label = "label_sopd_sfx_stealth_desc"
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_stealth_vol_reduction",
+            label = "label_sopd_sfx_stealth_vol_reduction",
+            min = 0,
+            max = 100,
+            decimal = 0
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_stealth_max_opps",
+            label = "label_sopd_sfx_stealth_max_opps",
+            min = 2,
+            max = 24,
+            decimal = 0
+        })
+
+        local formMisc = vgui.CreateTTT2Form(parent, "label_sopd_misc_form")
+        formMisc:MakeCheckBox({
+            serverConvar = "ttt2_sopd_give_guy_access",
+            label = "label_sopd_give_guy_access"
+        })
+        formMisc:MakeCheckBox({
+            serverConvar = "ttt2_sopd_debug",
+            label = "label_sopd_debug"
+        })
+    end
+end

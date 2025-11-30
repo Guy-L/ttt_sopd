@@ -11,7 +11,7 @@ function UPGRADE:Apply(SWEP)
     UPGRADE.name = string.gsub(SWEP.PrintName, "Defeat", newVerb)
 
     --targetless PaP swords have limited ammo for reasons that should be obvious
-    if not swordTargetPlayer then self:SetClip(SWEP, 1) end
+    if not swordTarget.player then self:SetClip(SWEP, 1) end
 
     SWEP.Packed = true
     if CLIENT then

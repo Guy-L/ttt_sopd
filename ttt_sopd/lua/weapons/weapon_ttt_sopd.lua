@@ -24,7 +24,7 @@ local HOOK_PLAYER_DISCONNECT = "TTT_SoPD_PlayerDisconnect"
 local HOOK_BUY               = "TTT_SoPD_NotifyDisconnectToBuyers"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
-local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE}
+local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
 local LEAVE_DNA = CreateConVar("ttt2_sopd_leave_dna", 0, CVAR_FLAGS, "Whether stabbing with the Sword leaves DNA.", 0, 1)
 local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
@@ -345,18 +345,17 @@ if SERVER then
         end
     end)
 
-    -- update shop description
+    -- tell clients to update shop description on cvar change
     function descVarChange(name, oldVal, newVal)
         net.Start(CVAR_UPDATE_MSG)
         net.Broadcast()
     end
-    cvars.AddChangeCallback(HOLDER_SPEEDUP:GetName(), descVarChange)
-    cvars.AddChangeCallback(TARGET_DMG_BLOCK:GetName(), descVarChange)
-    cvars.AddChangeCallback(OTHERS_DMG_BLOCK:GetName(), descVarChange)
-    cvars.AddChangeCallback(RANGE_BUFF:GetName(), descVarChange)
-    cvars.AddChangeCallback(RAGDOLL_STAB_COVERUP:GetName(), descVarChange)
-    cvars.AddChangeCallback(LEAVE_DNA:GetName(), descVarChange)
-    cvars.AddChangeCallback(ENABLE_TARGET_GLOW:GetName(), descVarChange)
+
+    local descCvars = {HOLDER_SPEEDUP, TARGET_DMG_BLOCK, OTHERS_DMG_BLOCK, RANGE_BUFF, RAGDOLL_STAB_COVERUP, LEAVE_DNA, ENABLE_TARGET_GLOW}
+    for _, cvar in ipairs(descCvars) do
+        cvars.RemoveChangeCallback(cvar:GetName(), cvar:GetName())
+        cvars.AddChangeCallback(cvar:GetName(), descVarChange, cvar:GetName())
+    end
 
 ----------------------------------
 --- CLIENT REALM SETUP / HOOKS ---
@@ -527,12 +526,12 @@ elseif CLIENT then
 
     -- update sword's shop & initialization info
     function UpdateSwordMeta(reason)
-        if DEBUG:GetBool() then print("Updating sword meta... ("..reason..")") end
+        DebugPrint("Updating sword meta... ("..reason..")")
 
         -- update description (text-building logic yippie)
         local desc = ""
 
-        if swordTarget.player then
+        if swordTarget.name then
             local dmgReductionDesc = ""
             local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
             if targetDmgBlock == 100 then
@@ -579,17 +578,17 @@ elseif CLIENT then
             local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
             desc = desc .. "• ".. speedStr .. "x speed multiplier\n"
         end
-        if swordTarget.player and ENABLE_TARGET_GLOW:GetBool() then
+        if swordTarget.name and ENABLE_TARGET_GLOW:GetBool() then
             desc = desc .. "• Can see " .. swordTarget.name .. "'s outline through walls\n"
         end
-        if swordTarget.player and TARGET_DMG_BLOCK:GetFloat() > 0 then
+        if swordTarget.name and TARGET_DMG_BLOCK:GetFloat() > 0 then
             local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTarget.name .. "\n"
         end
         if OTHERS_DMG_BLOCK:GetFloat() > 0 then
             local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. allBlockStr .. "% of "
-            if swordTarget.player then
+            if swordTarget.name then
                 if TARGET_DMG_BLOCK:GetFloat() > 0 then
                     desc = desc .. "damage from others\n"
                 else
@@ -605,7 +604,7 @@ elseif CLIENT then
         else
             desc = desc .. "Leaves no DNA. "
         end
-        if swordTarget.player and RAGDOLL_STAB_COVERUP:GetBool() then
+        if swordTarget.name and RAGDOLL_STAB_COVERUP:GetBool() then
             desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to destroy evidence"
             if not LEAVE_DNA:GetBool() then
                 desc = desc .. " and remove DNA"
@@ -615,11 +614,12 @@ elseif CLIENT then
 
         -- (undocumented magic attributes ftw)
         regMetaSWEP.desc = desc
+        curMetaSWEP.EquipMenuData.desc = desc
 
         --update SWEP's name
         local name = ""
 
-        if swordTarget.player then
+        if swordTarget.name then
             name = "Sword of ".. swordTarget.name .. " Defeat"
 
             local lowerName = string.lower(swordTarget.name)

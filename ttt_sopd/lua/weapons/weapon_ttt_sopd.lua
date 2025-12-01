@@ -45,7 +45,7 @@ local STEALTH_VOL_REDUCTION = CreateConVar("ttt2_sopd_sfx_stealth_vol_reduction"
 local STEALTH_MAX_OPPS = CreateConVar("ttt2_sopd_sfx_stealth_max_opps", 10, CVAR_FLAGS, "The stealth volume reduction on Sword sound effects is fully applied when this many opponents (inno/side teams) or more are alive, then goes down linearly with the number of remaining opponents (to zero effect when only one opponent left).", 2, 24)
 local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 
-local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Activates some debug client/server prints & makes Sword re-buyable (should not be on for real play).", 0, 1)
+local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debug prints for client & server (should not be on for real play).", 0, 1)
 
 ----------------------------------
 ---------- SHARED STATE ----------
@@ -115,12 +115,10 @@ function AdjustVolume(base_vol)
     local reductionStrength = math.min((GetOpponentCount() - 1) / (maxOpps - 1), 1)
     local finalVolume = (1 - reductionStrength * maxReduction) * base_vol
 
-    if DEBUG:GetBool() then
-        print("[SFX] base volume", base_vol, "max reduction", maxReduction)
-        print("[SFX] max opps", maxOpps, "opp count", GetOpponentCount())
-        print("[SFX] -> reduction strength", reductionStrength)
-        print("[SFX] -> adjusted volume", math.max(finalVolume, 0))
-    end
+    DebugPrint("[SFX] base volume", base_vol, "max reduction", maxReduction,
+               "\n[SFX] max opps", maxOpps, "opp count", GetOpponentCount(),
+               "\n[SFX] -> reduction strength", reductionStrength,
+               "\n[SFX] -> adjusted volume", math.max(finalVolume, 0))
 
     return math.max(finalVolume, 0)
 end
@@ -138,6 +136,7 @@ function GetAllRealSwords()
 end
 
 function DebugInspect(obj)
+    if not DEBUG:GetBool() then return end
     print(obj, type(obj))
 
     if type(obj) == "table" then
@@ -145,6 +144,29 @@ function DebugInspect(obj)
 
     elseif obj.GetTable then
         PrintTable(obj:GetTable())
+    end
+end
+
+function DebugPrint(...)
+    if not DEBUG:GetBool() then return end
+
+    --reconstruct string for server relay
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = tostring(select(i, ...))
+    end
+    local msg = table.concat(parts, "\t")
+
+    -- local print
+    print(msg)
+
+    --server relay to all clients except host
+    if SERVER then
+        for _, ply in ipairs(player.GetAll()) do
+            if not ply:IsListenServerHost() then
+                ply:PrintMessage(HUD_PRINTCONSOLE, "[Server Relay] " .. msg)
+            end
+        end
     end
 end
 
@@ -161,7 +183,7 @@ if SERVER then
     util.AddNetworkString("SoPD_GainedDisguiseMsg")
     --resource.AddWorkshop("3607870957")
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
-    if DEBUG:GetBool() then print("[SoPD Server] Initializing....") end
+    DebugPrint("[SoPD Server] Initializing....")
 
     function GetPossibleTargetPool()
         local possibleTargetPool = {}
@@ -192,8 +214,10 @@ if SERVER then
 
         if IsPlayer(to) then
             net.Send(to)
+            DebugPrint("Sent target data to "..to:Nick().." (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
         else
             net.Broadcast()
+            DebugPrint("Broadcast target data (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
         end
     end
 
@@ -201,15 +225,14 @@ if SERVER then
         local possibleTargetPool, playerCnt = GetPossibleTargetPool()
 
         -- Select target player
-        if DEBUG:GetBool() then print("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt) end
-
+        DebugPrint("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt)
 
         if #possibleTargetPool > 0 and playerCnt > 2 then
             newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
 
             --retry once to make it less likely to pick the same target twice
             if newTarget == swordTarget.player then
-                if DEBUG:GetBool() then print("[SoPD Server] Let's try not to pick the same target twice...") end
+                DebugPrint("[SoPD Server] Let's try not to pick the same target twice...")
                 newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
             end
 
@@ -217,9 +240,9 @@ if SERVER then
             swordTarget.name   = newTarget:Nick()
             swordTarget.SID64  = newTarget:SteamID64()
 
-            if DEBUG:GetBool() then print("[SoPD Server] Chosen sword target: " .. swordTarget.name .. " (team: " .. swordTarget.player:GetTeam() .. ")") end
+            DebugPrint("[SoPD Server] Chosen sword target: " .. swordTarget.name .. " (team: " .. swordTarget.player:GetTeam() .. ")")
         else
-            if DEBUG:GetBool() then print("[SoPD Server] No suitable target; SoPD will target anyone (without preventing damage).") end
+            DebugPrint("[SoPD Server] No suitable target; SoPD will target anyone (without preventing damage).")
 
             swordTarget.player = nil
             swordTarget.name   = nil
@@ -267,7 +290,7 @@ if SERVER then
                     wep:StopDeploySound("target death")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    if DEBUG:GetBool() then print("[SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick()) end
+                    DebugPrint("[SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
                     wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
                 end
             end
@@ -297,7 +320,7 @@ if SERVER then
                     wep:StartDeploySound("target respawn")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    if DEBUG:GetBool() then print("[SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick()) end
+                    DebugPrint("[SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick())
                     wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
                 end
             end
@@ -339,7 +362,7 @@ if SERVER then
 --- CLIENT REALM SETUP / HOOKS ---
 ----------------------------------
 elseif CLIENT then
-    if DEBUG:GetBool() then print("[SoPD Client] Initializing....") end
+    DebugPrint("[SoPD Client] Initializing....")
 
     regMetaSWEP = regMetaSWEP or SWEP --meta instance made at registration (map load)
     curMetaSWEP = SWEP --meta instance made at initialization
@@ -365,16 +388,21 @@ elseif CLIENT then
         swordTarget.name   = (netTargetName ~= "") and netTargetName or nil
         swordTarget.SID64  = (netTargetSID  ~= "") and netTargetSID or nil
 
+        if swordTarget.name then
+            DebugPrint("[SoPD Client] Known sword target: ".. swordTarget.name)
+        else
+            DebugPrint("[SoPD Client] No sword target")
+        end
+
         -- notify player if they own one
         local localPlayer = LocalPlayer()
 
-        if localPlayer:HasWeapon(CLASS_NAME) then
+        if localPlayer.HasWeapon and localPlayer:HasWeapon(CLASS_NAME) then
             local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
+
             if swordTarget.player then
-                if DEBUG:GetBool() then print("[SoPD Client] Known sword target: ".. swordTarget.name) end
                 targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
             else
-                if DEBUG:GetBool() then print("[SoPD Client] No sword target") end
                 targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
             end
 
@@ -466,7 +494,7 @@ elseif CLIENT then
     net.Receive(SWORD_KILLED_MSG, function()
         local isPapped = net.ReadBool()
         local swordEnt = net.ReadEntity()
-        if DEBUG:GetBool() then print("[SWORD_KILLED_MSG]", swordEnt, IsValid(swordEnt), isPapped) end
+        DebugPrint("[SWORD_KILLED_MSG]", swordEnt, IsValid(swordEnt), isPapped)
 
         if not isPapped and IsValid(swordEnt) then
             local choice
@@ -481,7 +509,7 @@ elseif CLIENT then
                 choice = "triumph_other"
             end
 
-            if DEBUG:GetBool() then print("[SFX] Playing on-kill triumph sound", choice) end
+            DebugPrint("[SFX] Playing on-kill triumph sound", choice)
             swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
         end
     end)
@@ -643,10 +671,9 @@ SWEP.Primary.Automatic   = true
 SWEP.Primary.Delay       = 0.5
 SWEP.Primary.Ammo        = "none"
 
-SWEP.Kind         = WEAPON_EQUIP
-SWEP.CanBuy       = {ROLE_TRAITOR, ROLE_JACKAL}
-SWEP.LimitedStock = !DEBUG:GetBool()
-SWEP.WeaponID     = AMMO_KNIFE
+SWEP.Kind        = WEAPON_EQUIP
+SWEP.CanBuy      = {ROLE_TRAITOR, ROLE_JACKAL}
+SWEP.WeaponID    = AMMO_KNIFE
 SWEP.IsSilent    = true --(negated by the noises we add lol)
 SWEP.AllowDrop   = true
 SWEP.DeploySpeed = 2
@@ -682,7 +709,7 @@ function SWEP:PrimaryAttack()
     end
 
     local hitEnt = tr.Entity
-    if DEBUG:GetBool() then print("SoPD Primary hit entity:", hitEnt) end
+    DebugPrint("SoPD Primary hit entity:", hitEnt)
 
     -- effects
     if IsValid(hitEnt) then
@@ -711,24 +738,21 @@ function SWEP:PrimaryAttack()
         local HIT_ENT_VALID = IsValid(hitEnt)
         local preReqs = CAN_STAB and IS_HIT and HIT_NOT_WORLD and HIT_ENT_VALID
 
-        if DEBUG:GetBool() then
-            print("SoPD Primary Attack Checks:\n• PREREQS - ".. tostring(preReqs)
-                .. " -> sword can stab: " .. tostring(CAN_STAB)
-                .. " & trace hit: "       .. tostring(IS_HIT)
-                .. " & non-world: "       .. tostring(HIT_NOT_WORLD)
-                .. " & valid entity: "           .. tostring(HIT_ENT_VALID))
-        end
+        DebugPrint("SoPD Primary Attack Checks:\n"
+            .."• PREREQS - "          .. tostring(preReqs)
+            .. " -> sword can stab: " .. tostring(CAN_STAB)
+            .. " & trace hit: "       .. tostring(IS_HIT)
+            .. " & non-world: "       .. tostring(HIT_NOT_WORLD)
+            .. " & valid entity: "    .. tostring(HIT_ENT_VALID))
 
         if preReqs then
             local CAN_STAB_ENT     = CanBeStabbed(hitEnt)
             local OWNER_NOT_JESTER = owner:GetTeam() != TEAM_JESTER
             local isKill = CAN_STAB_ENT and OWNER_NOT_JESTER
 
-            if DEBUG:GetBool() then
-                print("• KILL - " .. tostring(isKill)
-                    .. " -> can stab ent: "     .. tostring(CAN_STAB_ENT)
-                    .. " & owner is not jest: " .. tostring(OWNER_NOT_JESTER))
-            end
+            DebugPrint("• KILL - "          .. tostring(isKill)
+                .. " -> can stab ent: "     .. tostring(CAN_STAB_ENT)
+                .. " & owner is not jest: " .. tostring(OWNER_NOT_JESTER))
 
             if isKill then
                 self:StabKill(tr, spos, sdest)
@@ -743,13 +767,11 @@ function SWEP:PrimaryAttack()
                 local UNTARGET_PAP = swordTarget.player == nil and self.Packed == true
                 local isRagStab = IS_RAG and IS_PLAYER_RAG and (TARGET_MATCH or UNTARGET_PAP)
 
-                if DEBUG:GetBool() then
-                    print("• RAGSTAB - " .. tostring(isRagStab)
-                        .. " -> is ragdoll: "         .. tostring(IS_RAG)
-                        .. " & is of player: "        .. tostring(IS_PLAYER_RAG)
-                        .. " & target match: "        .. tostring(TARGET_MATCH)
-                        .. " | targetless pap: "      .. tostring(UNTARGET_PAP))
-                end
+                DebugPrint("• RAGSTAB - "         .. tostring(isRagStab)
+                    .. " -> is ragdoll: "         .. tostring(IS_RAG)
+                    .. " & is of player: "        .. tostring(IS_PLAYER_RAG)
+                    .. " & target match: "        .. tostring(TARGET_MATCH)
+                    .. " | targetless pap: "      .. tostring(UNTARGET_PAP))
 
                 if isRagStab then
                     self:StabRagdoll(tr, spos, sdest)
@@ -886,7 +908,7 @@ if SERVER then
             net.WriteEntity(stuckSword)
             net.Broadcast()
             if packEffect then packEffect(swepRef, rag, owner) end
-            if DEBUG:GetBool() then print("[SWORD_KILLED_MSG] Sent") end
+            DebugPrint("[SWORD_KILLED_MSG] Sent")
         end
 
         --dispatch killing attack, trigger sword sticking function & clean up
@@ -934,7 +956,7 @@ if SERVER then
             local stabSnd = "rag_stab1"
             if math.random() > 0.8 then stabSnd = "rag_stab2" end
 
-            if DEBUG:GetBool() then print("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol) end
+            DebugPrint("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol)
             stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
         end
 
@@ -963,9 +985,7 @@ if SERVER then
 
     function SWEP:StartDeploySound(reason)
         if self.DeploySound and self.DeploySound:IsPlaying() then
-            if DEBUG:GetBool() then
-                print("[SFX] Not starting deploy sound caused by "..reason.." - song already playing.")
-            end
+            DebugPrint("[SFX] Not starting deploy sound caused by "..reason.." - song already playing.")
             return
         end
 
@@ -973,7 +993,7 @@ if SERVER then
 
         if IsValid(owner) and self:CanStab()
           and (IsLivingPlayer(swordTarget.player) or not swordTarget.player) then
-            if DEBUG:GetBool() then print("[SFX] Starting deploy sound due to "..reason) end
+            DebugPrint("[SFX] Starting deploy sound due to "..reason)
 
             local deploySnd = "gourmet"
             if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
@@ -983,19 +1003,20 @@ if SERVER then
             self.DeploySound = CreateSound(owner, sounds[deploySnd])
             self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
             self.DeploySound:PlayEx(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100), 100)
-        elseif DEBUG:GetBool() then
-            print("[SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
+
+        else
+            DebugPrint("[SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
         end
     end
 
     function SWEP:StopDeploySound(reason)
         if self.DeploySound and self.DeploySound:IsPlaying() then
-            if DEBUG:GetBool() then print("[SFX] Stopping deploy sound due to "..reason) end
+            DebugPrint("[SFX] Stopping deploy sound due to "..reason)
             self.DeploySound:Stop()
             self.DeploySound = nil
 
-        elseif DEBUG:GetBool() then
-            print("[SFX] Not stopping deploy caused by "..reason.." - song not playing.")
+        else
+            DebugPrint("[SFX] Not stopping deploy caused by "..reason.." - song not playing.")
         end
     end
 
@@ -1012,7 +1033,7 @@ elseif CLIENT then
 
     function SWEP:UpdateUI(reason)
         if self.Packed then return end
-        if DEBUG:GetBool() then print("Updating sword UI... ("..reason..")") end
+        DebugPrint("Updating sword UI... ("..reason..")")
 
         --TODO properly handle PaP here so "Inhale yourself?" can show up
         self.PrintName = curMetaSWEP.PrintName

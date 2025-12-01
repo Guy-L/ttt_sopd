@@ -46,4 +46,4 @@ L["label_sopd_sfx_stealth_max_opps"] = "[Stealth] n = Max reduction minimum oppo
 
 L["label_sopd_misc_form"] = "Debugging & Miscellaneous"
 L["label_sopd_give_guy_access"] = "Allow author to change Sword of Player Defeat convars"
-L["label_sopd_debug"] = "Enable debug prints (+ rebuyable Sword)"
+L["label_sopd_debug"] = "Enable debug prints"

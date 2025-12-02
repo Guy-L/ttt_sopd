@@ -438,12 +438,19 @@ elseif CLIENT then
         end
 
         -- update sword UI
-        local updateReason = (isTargetChange) and "target change" or "target died/revived"
-        if isTargetChange then UpdateSwordMeta(updateReason) end
+        if isTargetChange then
+            UpdateSwordMeta("target change")
+        end
 
         for _, sword in ipairs(GetAllRealSwords()) do
-            sword:UpdateAmmo() --cf. comment on that function
-            sword:UpdateUI(updateReason)
+            if isTargetChange then
+                sword:UpdateAmmo() --cf. comment on that function
+                sword:UpdateUI("target change")
+
+            -- prevent early mid-inhale update (target death + has victim)
+            elseif not (swordTarget.ragdoll and IsValid(sword:GetPackVictim())) then
+                sword:UpdateUI("target died/revived")
+            end
         end
     end)
 
@@ -1106,11 +1113,10 @@ elseif CLIENT then
 
         -- update tooltip instructions
         self:ClearHUDHelp()
-        local packVictim = self:GetPackVictim()
 
-        if not IsValid(packVictim) then -- sword doesn't have valid disguise
-            if self:HasSwordAmmo() then   -- sword has ammo
-                if IsSwordTargeted() then    -- sword is targeted
+        if not IsValid(self:GetPackVictim()) then -- sword doesn't have valid disguise
+            if self:HasSwordAmmo() then           -- sword has ammo
+                if IsSwordTargeted() then         -- sword is targeted
                     if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
                         if not isPacked then                                -- sword is not packed
                             if targetAlive then                               -- target is alive

@@ -15,30 +15,31 @@ UPGRADE.class = "weapon_ttt_sopd"
 ----------------------------------
 if CLIENT then
     net.Receive(GOT_DISGUISE_MSG, function()
-        local packVictim = net.ReadPlayer()
-        local invSword = GetLocalInventorySword()
-
-        if invSword then
-            invSword.PackVictim = packVictim
-            invSword:UpdateUI("received disguise")
-        end
+        DebugPrint("[SoPD Client] Received disguise notif")
+        UpdateLocalInventorySword("received disguise")
     end)
 
     net.Receive(DISGUISE_DISCONNECT_MSG, function()
-        local invSword = GetLocalInventorySword()
-
-        if invSword and invSword.PackVictim and not IsValid(invSword.PackVictim) then
-            invSword:UpdateUI("disguise disconnected")
-        end
+        DebugPrint("[SoPD Client] Received disguise disconnect notif")
+        UpdateLocalInventorySword("disguise disconnected")
     end)
 
 elseif SERVER then
     util.AddNetworkString(GOT_DISGUISE_MSG)
     util.AddNetworkString(DISGUISE_DISCONNECT_MSG)
 
-    hook.Add("PlayerDisconnected", HOOK_DISGUISE_DISCONNECT, function()
-        net.Start(DISGUISE_DISCONNECT_MSG)
-        net.Broadcast()
+    hook.Add("PlayerDisconnected", HOOK_DISGUISE_DISCONNECT, function(leavingPly)
+        for _, ply in ipairs(player.GetAll()) do
+            if ply.storedDisguiserTarget == leavingPly then
+                for _, wep in ipairs(ply:GetWeapons()) do
+                    if wep:GetClass() == UPGRADE.class and wep:GetPackVictim() == leavingPly then
+                        net.Start(DISGUISE_DISCONNECT_MSG)
+                        net.Send(ply)
+                        break
+                    end
+                end
+            end
+        end
     end)
 end
 
@@ -48,13 +49,11 @@ end
 function UPGRADE:Apply(SWEP)
     --targetless PaP swords have limited ammo for reasons that should be obvious
     if not swordTarget.player then self:SetClip(SWEP, 1) end
-    SWEP.Packed = true
 
     ----------------------------------
     ------ CLIENT REALM UPDATES ------
     ----------------------------------
     if CLIENT then
-        SWEP.DeleteVerb = (math.random() > 0.5)
         SWEP:UpdateUI("packed")
 
         -- only needed to it doesn't prepend "PAP" to the name
@@ -82,6 +81,9 @@ function UPGRADE:Apply(SWEP)
     ----- SERVER REALM SWEP DEFS -----
     ----------------------------------
     elseif SERVER then
+        SWEP:SetPacked(true) --cf. note in SetupDataTables
+        SWEP:SetPackVerb(math.random() > 0.5)
+
         -- API method for this doesn't appear to work lol
         local function GetRagdollOwner(rag)
             for _, ply in ipairs(player.GetAll()) do
@@ -105,17 +107,17 @@ function UPGRADE:Apply(SWEP)
             end)
 
             -- make it later :)
-            self.PackVictim = GetRagdollOwner(rag)
+            self:SetPackVictim(GetRagdollOwner(rag))
             timer.Simple(3, function()
                 if not IsValid(owner) then return end
                 owner:SetHealth(owner:Health() + PAP_HEAL:GetInt())
 
-                if IsValid(self.PackVictim) and owner.ActivateDisguiserTarget then
-                    owner:UpdateStoredDisguiserTarget(self.PackVictim, self.PackVictim:GetModel(), self.PackVictim:GetSkin())
+                local packVictim = self:GetPackVictim()
+                if IsValid(packVictim) and owner.ActivateDisguiserTarget then
+                    owner:UpdateStoredDisguiserTarget(packVictim, packVictim:GetModel(), packVictim:GetSkin())
                     owner:ActivateDisguiserTarget()
 
                     net.Start(GOT_DISGUISE_MSG)
-                    net.WritePlayer(self.PackVictim)
                     net.Send(owner)
                 end
             end)
@@ -123,9 +125,10 @@ function UPGRADE:Apply(SWEP)
 
         function SWEP:SecondaryAttack()
             local owner = self:GetOwner()
+            local packVictim = self:GetPackVictim()
 
-            if IsValid(owner) and owner.ToggleDisguiserTarget and IsValid(self.PackVictim)
-              and owner.storedDisguiserTarget == self.PackVictim then
+            if IsValid(owner) and owner.ToggleDisguiserTarget and IsValid(packVictim)
+              and owner.storedDisguiserTarget == packVictim then
                 owner:ToggleDisguiserTarget()
             end
         end

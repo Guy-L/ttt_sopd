@@ -127,15 +127,15 @@ end
 
 function GetAllRealSwords()
     -- note: UI updates that only impact tooltips should use GetLocalInventorySword
-    local invSwords = {}
+    local swords = {}
 
     for _, ent in ipairs(ents.GetAll()) do
         if IsValid(ent) and ent:GetClass() == CLASS_NAME then
-            table.insert(invSwords, ent)
+            table.insert(swords, ent)
         end
     end
 
-    return invSwords
+    return swords
 end
 
 function DebugInspect(obj)
@@ -231,7 +231,7 @@ if SERVER then
         swordTarget.ragdoll = nil
 
         -- Select target player
-        DebugPrint("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt)
+        DebugPrint("[SoPD Server] Possible targets: "..tostring(#possibleTargetPool).."; player count: "..tostring(playerCnt))
 
         if #possibleTargetPool > 0 and playerCnt >= TARGET_MIN_PLAYERS:GetInt() then
             newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
@@ -271,7 +271,7 @@ if SERVER then
             if attacker == swordTarget.player then
                 dmgBlock = TARGET_DMG_BLOCK:GetFloat() / 100
             end
-            if target:GetActiveWeapon().Packed then
+            if target:GetActiveWeapon():GetPacked() then
                 dmgBlock = dmgBlock + (PAP_DMG_BLOCK:GetFloat() / 100)
             end
 
@@ -449,15 +449,22 @@ elseif CLIENT then
         return nil
     end
 
+    function UpdateLocalInventorySword(reason)
+        local invSword = GetLocalInventorySword()
+
+        if invSword then
+            invSword:UpdateUI(reason)
+        end
+    end
+
     -- update sword UI if the target's ragdoll disappears from the world
     hook.Add("EntityRemoved", HOOK_TARGET_REMOVED, function(ent)
         if ent == swordTarget.ragdoll then
             timer.Simple(0.1, function() -- wait for deletion
                 local invSword = GetLocalInventorySword()
 
-                -- note: could prevent redundant update when inhaling
-                --       if SWEP.PackVictim was properly networked
-                if invSword then
+                -- dont update UI mid-inhale
+                if invSword and not IsValid(invSword:GetPackVictim()) then
                     invSword:UpdateUI("target body destroyed")
                 end
             end)
@@ -506,7 +513,7 @@ elseif CLIENT then
         if CanBeStabbed(tData:GetEntity()) and InPlayerStabRange(localPlayer) and HoldsSword(localPlayer, true) then
             local role_color = localPlayer:GetRoleColor()
             local insta_label = "sopd_instantkill"
-            if localPlayer:GetActiveWeapon().Packed then
+            if localPlayer:GetActiveWeapon():GetPacked() then
                 insta_label = "sopd_instanteat"
             end
             tData:AddDescriptionLine(LANG.TryTranslation(insta_label), role_color)
@@ -661,10 +668,8 @@ elseif CLIENT then
 
     net.Receive(SWORD_PICKUP_MSG, function()
         timer.Simple(0.01, function() -- safety sync wait
-            local invSword = GetLocalInventorySword()
-            DebugPrint("[SoPD Client] Received pickup notif, found inventory sword:", invSword)
-
-            if invSword then invSword:UpdateUI("pickup") end
+            DebugPrint("[SoPD Client] Received pickup notif")
+            UpdateLocalInventorySword("pickup")
         end)
     end)
 
@@ -711,6 +716,19 @@ SWEP.WeaponID    = AMMO_KNIFE
 SWEP.IsSilent    = true --(negated by the noises we add lol)
 SWEP.AllowDrop   = true
 SWEP.DeploySpeed = 2
+
+function SWEP:SetupDataTables()
+    -- note: could check for self.PAPUpgrade ~= nil to not store this,
+    --       but it's not properly networked & false for client during Apply
+    self:NetworkVar("Bool", 0, "Packed")
+    self:NetworkVar("Bool", 1, "PackVerb")
+    self:NetworkVar("Bool", 2, "StabbedTarget")
+    self:NetworkVar("Entity", 0, "PackVictim")
+end
+
+function SWEP:UpdateTransmitState()
+    return TRANSMIT_ALWAYS -- update state for all clients
+end
 
 function SWEP:CanStab()
     return self.Primary.ClipSize == -1 or self:Clip1() > 0
@@ -795,7 +813,7 @@ function SWEP:PrimaryAttack()
                 local IS_RAG        = hitEnt:GetClass() == "prop_ragdoll"
                 local IS_PLAYER_RAG = hitEnt:IsPlayerRagdoll()
                 local TARGET_MATCH  = hitEnt == swordTarget.ragdoll or hitEnt.sid64 == swordTarget.SID64
-                local UNTARGET_PAP  = swordTarget.player == nil and self.Packed == true
+                local UNTARGET_PAP  = swordTarget.name == nil and self:GetPacked()
                 local isRagStab = IS_RAG and IS_PLAYER_RAG and (TARGET_MATCH or UNTARGET_PAP)
 
                 DebugPrint("• RAGSTAB - "    .. tostring(isRagStab)
@@ -842,9 +860,9 @@ end
 function SWEP:UpdateAmmo()
     -- Existing PaP'd swords needs to have ammo updated if sword becomes targetless
     -- Note: Not needed the other way around since a round without a target will never "gain" a target (no need to call after setting/changing target or to make the sword ammo-less again)
-    if self.Packed and not swordTarget.player then
+    if self:GetPacked() and not swordTarget.player then
         self.Primary.ClipSize = 1
-        self:SetClip1(not self.StabbedTarget and 1 or 0)
+        self:SetClip1(not self:GetStabbedTarget() and 1 or 0)
     end
 end
 
@@ -951,7 +969,7 @@ if SERVER then
     function SWEP:StabRagdoll(tr, spos, sdest)
         local hitRagdoll = tr.Entity
 
-        if not self.Packed then
+        if not self:GetPacked() then
             local ang = adjStuckSwordAngle(tr.Normal)
             local pos = adjStuckSwordPos(tr, ang)
             local stabVol = 0.2
@@ -998,15 +1016,15 @@ if SERVER then
         self:StopDeploySound("consumption")
 
         if swordTarget.player then
-            self.StabbedTarget = true
+            self:SetStabbedTarget(true)
         end
 
-        if self.Packed then
+        if self:GetPacked() then
             if self.Primary.ClipSize != -1 then
                 self:SetClip1(0)
             end
 
-            if doPap and rag and not self.PackVictim then
+            if doPap and rag and not IsValid(self:GetPackVictim()) then
                 self:PackEffect(rag, self:GetOwner())
             end
         else
@@ -1066,8 +1084,9 @@ elseif CLIENT then
         DebugPrint("[SoPD Client] Updating sword UI... ("..reason..")")
 
         -- update name
-        if self.Packed then
-            local packVerb = self.DeleteVerb and "Delete" or "Def-Eat"
+        local isPacked = self:GetPacked()
+        if isPacked then
+            local packVerb = self:GetPackVerb() and "Delete" or "Def-Eat"
             self.PrintName = string.gsub(curMetaSWEP.PrintName, "Defeat", packVerb)
         else
             self.PrintName = curMetaSWEP.PrintName
@@ -1076,13 +1095,13 @@ elseif CLIENT then
         -- update tooltip instructions
         self:ClearHUDHelp()
 
-        if not IsValid(self.PackVictim) then -- sword doesn't have valid disguise
-            if swordTarget.player then       -- sword is targeted
+        if not IsValid(self:GetPackVictim()) then -- sword doesn't have valid disguise
+            if swordTarget.player then            -- sword is targeted
                 --(regular alive check may be wrong due to client/server sync delay)
                 local targetAlive = (swordTarget.ragdoll == nil)
 
-                if targetAlive or IsValid(swordTarget.ragdoll) then   -- target is interactable
-                    if not self.Packed then                            -- sword is not packed
+                if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
+                    if not isPacked then                                -- sword is not packed
                         if targetAlive then                               -- target is alive
                             if self:GetOwner() ~= swordTarget.player then    -- owner is not target
                                 self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
@@ -1115,7 +1134,7 @@ elseif CLIENT then
                 end
 
             else -- targetless sword
-                if self.Packed then
+                if isPacked then
                     if self:CanStab() then
                         self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
                     else

@@ -33,13 +33,14 @@ elseif SERVER then
             if ply.storedDisguiserTarget == leavingPly then
                 -- note: also affects regular ID disguise which is probably for the best
                 ply:ChatPrint("Disguise broke (player disconnected).")
+            end
 
-                for _, wep in ipairs(ply:GetWeapons()) do
-                    if wep:GetClass() == UPGRADE.class and wep:GetPackVictim() == leavingPly then
-                        net.Start(DISGUISE_DISCONNECT_MSG)
-                        net.Send(ply)
-                        break
-                    end
+            -- if you own a sword that has leavingPly as PackVictim, update UI
+            for _, wep in ipairs(ply:GetWeapons()) do
+                if wep:GetClass() == UPGRADE.class and wep:GetPackVictim() == leavingPly then
+                    net.Start(DISGUISE_DISCONNECT_MSG)
+                    net.Send(ply)
+                    break
                 end
             end
         end
@@ -136,11 +137,16 @@ function UPGRADE:Apply(SWEP)
 
         function SWEP:SecondaryAttack()
             local owner = self:GetOwner()
+            if not owner.ToggleDisguiserTarget then return end --addon missing
             local packVictim = self:GetPackVictim()
 
-            if IsValid(owner) and owner.ToggleDisguiserTarget and IsValid(packVictim)
-              and owner.storedDisguiserTarget == packVictim then
-                owner:ToggleDisguiserTarget()
+            if IsValid(owner) and IsValid(packVictim) then
+                if owner.storedDisguiserTarget == packVictim then
+                    owner:ToggleDisguiserTarget()
+                else
+                    owner:UpdateStoredDisguiserTarget(packVictim, packVictim:GetModel(), packVictim:GetSkin())
+                    owner:ActivateDisguiserTarget()
+                end
             end
         end
     end

@@ -6,11 +6,10 @@ local DEFAULT_NAME = "Sword of Player Defeat"
 local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
 local SWORD_WORLDMODEL = "models/ttt/sopd/w_sopd.mdl"
 
-local SWORD_TARGET_MSG   = "SoPD_SwordTargetMsg"
-local SWORD_KILLED_MSG   = "SoPD_SwordKilledMsg"
-local TARGET_DIED_MSG    = "SoPD_TargetDiedMsg"
-local TARGET_SPAWNED_MSG = "SoPD_TargetSpawnedMsg"
-local CVAR_UPDATE_MSG    = "SoPD_ConvarUpdateMsg"
+local SWORD_TARGET_MSG = "TTT_SoPD_SwordTargetMsg"
+local SWORD_KILLED_MSG = "TTT_SoPD_SwordKilledMsg"
+local SWORD_PICKUP_MSG = "TTT_SoPD_SwordPickUpMsg"
+local CVAR_UPDATE_MSG  = "TTT_SoPD_ConvarUpdateMsg"
 
 local HOOK_BEGIN_ROUND       = "TTT_SoPD_ChooseTarget"
 local HOOK_PRE_GLOW          = "TTT_SoPD_TargetGlow"
@@ -20,8 +19,8 @@ local HOOK_PLAYER_DEATH      = "TTT_SoPD_ProcessDeaths"
 local HOOK_PLAYER_SPAWN      = "TTT_SoPD_ProcessSpawns"
 local HOOK_PLAYER_STABBED    = "TTT_SoPD_PlaySwordKillSound"
 local HOOK_PLAYER_CONNECT    = "TTT_SoPD_PlayerConnect"
-local HOOK_PLAYER_DISCONNECT = "TTT_SoPD_PlayerDisconnect"
-local HOOK_BUY               = "TTT_SoPD_NotifyDisconnectToBuyers"
+local HOOK_TARGET_DISCONNECT = "TTT_SoPD_TargetDisconnect"
+local HOOK_TARGET_REMOVED    = "TTT_SoPD_TargetRemoved"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
@@ -115,15 +114,16 @@ function AdjustVolume(base_vol)
     local reductionStrength = math.min((GetOpponentCount() - 1) / (maxOpps - 1), 1)
     local finalVolume = (1 - reductionStrength * maxReduction) * base_vol
 
-    DebugPrint("[SFX] base volume", base_vol, "max reduction", maxReduction,
-               "\n[SFX] max opps", maxOpps, "opp count", GetOpponentCount(),
-               "\n[SFX] -> reduction strength", reductionStrength,
-               "\n[SFX] -> adjusted volume", math.max(finalVolume, 0))
+    DebugPrint("[SoPD SFX] base volume", base_vol, "max reduction", maxReduction,
+             "\n[SoPD SFX] max opps", maxOpps, "opp count", GetOpponentCount(),
+             "\n[SoPD SFX] -> reduction strength", reductionStrength,
+             "\n[SoPD SFX] -> adjusted volume", math.max(finalVolume, 0))
 
     return math.max(finalVolume, 0)
 end
 
 function GetAllRealSwords()
+    -- note: UI updates that only impact tooltips should use GetLocalInventorySword
     local invSwords = {}
 
     for _, ent in ipairs(ents.GetAll()) do
@@ -142,7 +142,7 @@ function DebugInspect(obj)
     if type(obj) == "table" then
         PrintTable(obj)
 
-    elseif obj.GetTable then
+    elseif obj.GetTable and obj:GetTable() then
         PrintTable(obj:GetTable())
     end
 end
@@ -174,16 +174,16 @@ end
 --- SERVER REALM SETUP / HOOKS ---
 ----------------------------------
 if SERVER then
+    DebugPrint("[SoPD Server] Initializing....")
+
     AddCSLuaFile("weapon_ttt_sopd.lua")
     util.AddNetworkString(SWORD_TARGET_MSG)
     util.AddNetworkString(SWORD_KILLED_MSG)
-    util.AddNetworkString(TARGET_DIED_MSG)
-    util.AddNetworkString(TARGET_SPAWNED_MSG)
     util.AddNetworkString(CVAR_UPDATE_MSG)
     util.AddNetworkString("SoPD_GainedDisguiseMsg")
+
     --resource.AddWorkshop("3607870957")
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
-    DebugPrint("[SoPD Server] Initializing....")
 
     function GetPossibleTargetPool()
         local possibleTargetPool = {}
@@ -206,23 +206,26 @@ if SERVER then
         return possibleTargetPool, livingPlayerCnt
     end
 
-    function SendTargetData(to)
+    function SendTargetData(to, isPlayerChange)
         net.Start(SWORD_TARGET_MSG)
-        net.WritePlayer(swordTarget.player or NULL)
-        net.WriteString(swordTarget.name   or "")
-        net.WriteString(swordTarget.SID64  or "")
+        net.WriteBool(isPlayerChange ~= false)
+        net.WritePlayer(swordTarget.player  or NULL)
+        net.WriteString(swordTarget.name    or "")
+        net.WriteString(swordTarget.SID64   or "")
+        net.WriteEntity(swordTarget.ragdoll or NULL)
 
         if IsPlayer(to) then
             net.Send(to)
-            DebugPrint("Sent target data to "..to:Nick().." (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
+            DebugPrint("[SoPD Server] Sent target data to "..to:Nick().." (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
         else
             net.Broadcast()
-            DebugPrint("Broadcast target data (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
+            DebugPrint("[SoPD Server] Broadcast target data (target: "..tostring(swordTarget.name).." / "..tostring(swordTarget.player)..")")
         end
     end
 
     function DrawTarget()
         local possibleTargetPool, playerCnt = GetPossibleTargetPool()
+        swordTarget.ragdoll = nil
 
         -- Select target player
         DebugPrint("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt)
@@ -278,8 +281,9 @@ if SERVER then
         local targetDied = (IsValid(ply) and ply == swordTarget.player)
 
         if targetDied then
-            net.Start(TARGET_DIED_MSG)
-            net.Broadcast()
+            DebugPrint("[SoPD Server] Target died")
+            swordTarget.ragdoll = ply.server_ragdoll
+            SendTargetData(nil, false)
         end
 
         -- Find any held swords & adjust or end (if target died) their deploy sounds
@@ -290,16 +294,10 @@ if SERVER then
                     wep:StopDeploySound("target death")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    DebugPrint("[SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
+                    DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
                     wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
                 end
             end
-        end
-
-        -- Store player ref in ragdoll for later use (GetRagdollOwner doesn't work as expected, maybe cause I'm testing with bots?)
-        local rag = ply.server_ragdoll
-        if IsValid(rag) then
-            rag.PlyOwner = ply
         end
     end)
 
@@ -308,8 +306,9 @@ if SERVER then
         local targetSpawned = (IsLivingPlayer(swordTarget.player) and ply == swordTarget.player)
 
         if targetSpawned then
-            net.Start(TARGET_SPAWNED_MSG)
-            net.Broadcast()
+            DebugPrint("[SoPD Server] Target spawned")
+            swordTarget.ragdoll = nil
+            SendTargetData(nil, false)
         end
 
         -- Find any held swords & adjust or start (if target respawned) their deploy sounds
@@ -320,7 +319,7 @@ if SERVER then
                     wep:StartDeploySound("target respawn")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    DebugPrint("[SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick())
+                    DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick())
                     wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
                 end
             end
@@ -331,11 +330,12 @@ if SERVER then
     hook.Add("PlayerInitialSpawn", HOOK_PLAYER_CONNECT, SendTargetData)
 
     -- Update target if no sword was used this round
-    hook.Add("PlayerDisconnected", HOOK_PLAYER_DISCONNECT, function(ply)
+    hook.Add("PlayerDisconnected", HOOK_TARGET_DISCONNECT, function(ply)
         if ply == swordTarget.player then
-            swordTarget.player = nil
-            swordTarget.name   = nil
-            swordTarget.SID64  = nil
+            swordTarget.player   = nil
+            swordTarget.name     = nil
+            swordTarget.SID64    = nil
+            swordTarget.ragdoll  = nil
 
             for _, sword in ipairs(GetAllRealSwords()) do
                 sword:UpdateAmmo() --cf. comment on that function
@@ -345,7 +345,7 @@ if SERVER then
         end
     end)
 
-    -- tell clients to update shop description on cvar change
+    -- Tell clients to update shop description on cvar change
     function descVarChange(name, oldVal, newVal)
         net.Start(CVAR_UPDATE_MSG)
         net.Broadcast()
@@ -379,55 +379,54 @@ elseif CLIENT then
     curMetaSWEP.DrawCrosshair = false
     curMetaSWEP.UseHands      = true
 
-    net.Receive(SWORD_TARGET_MSG, function(msgLen, sender)
-        local netTargetPlayer = net.ReadPlayer()
-        local netTargetName   = net.ReadString()
-        local netTargetSID    = net.ReadString()
-        swordTarget.player = (IsValid(netTargetPlayer)) and netTargetPlayer or nil
-        swordTarget.name   = (netTargetName ~= "") and netTargetName or nil
-        swordTarget.SID64  = (netTargetSID  ~= "") and netTargetSID or nil
+    net.Receive(SWORD_TARGET_MSG, function()
+        local isTargetChange   = net.ReadBool()
+        local netTargetPlayer  = net.ReadPlayer()
+        local netTargetName    = net.ReadString()
+        local netTargetSID64   = net.ReadString()
+        local netTargetRagdoll = net.ReadEntity()
 
-        if swordTarget.name then
-            DebugPrint("[SoPD Client] Known sword target: ".. swordTarget.name)
-        else
-            DebugPrint("[SoPD Client] No sword target")
+        if isTargetChange then
+            -- prevent wrongly making sword targetless if target disconnects
+            swordTarget.player = (IsValid(netTargetPlayer))  and netTargetPlayer  or nil
         end
+        swordTarget.name    = (netTargetName ~= "")          and netTargetName    or nil
+        swordTarget.SID64   = (netTargetSID64  ~= "")        and netTargetSID64   or nil
+        swordTarget.ragdoll = (IsValid(netTargetRagdoll))    and netTargetRagdoll or nil
 
-        -- notify player if they own one
-        local localPlayer = LocalPlayer()
-
-        if localPlayer.HasWeapon and localPlayer:HasWeapon(CLASS_NAME) then
-            local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
-
+        if isTargetChange then
             if swordTarget.player then
-                targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
+                DebugPrint("[SoPD Client] Known sword target: ".. swordTarget.name)
             else
-                targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
+                DebugPrint("[SoPD Client] No sword target")
             end
 
-            localPlayer:ChatPrint(targetChangeNotif)
+            -- notify player if they own one
+            local localPlayer = LocalPlayer()
+
+            if localPlayer.HasWeapon and localPlayer:HasWeapon(CLASS_NAME) then
+                local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
+
+                if swordTarget.player then
+                    targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
+                else
+                    targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
+                end
+
+                localPlayer:ChatPrint(targetChangeNotif)
+            end
         end
 
         -- update sword UI
-        UpdateSwordMeta("target change")
+        local updateReason = (isTargetChange) and "target change" or "target died/revived"
+        if isTargetChange then UpdateSwordMeta(updateReason) end
+
         for _, sword in ipairs(GetAllRealSwords()) do
-            sword:UpdateUI("target change")
+            sword:UpdateUI(updateReason)
             sword:UpdateAmmo() --cf. comment on that function
         end
     end)
 
-    -- why do I have to do this :(
-    function GetTargetRagdoll()
-        for _, ent in ipairs(ents.FindByClass("prop_ragdoll")) do
-            if not IsValid(ent) then continue end
-
-            if CORPSE.GetPlayerNick(ent, nil) == swordTarget.name then --this blows!!
-                return ent
-            end
-        end
-
-        return nil
-    end
 
     function InPlayerStabRange(ply)
         if not (IsPlayer(ply)) then return false end
@@ -437,7 +436,7 @@ elseif CLIENT then
         return ply:GetShootPos():Distance(tr.HitPos) <= 110 * RANGE_BUFF:GetFloat() and CanBeStabbed(tr.Entity)
     end
 
-    --display halo (through walls if convar is enabled & always if able to kill)
+    -- display halo (through walls if convar is enabled & always if able to kill)
     hook.Add("PreDrawHalos", HOOK_PRE_GLOW, function()
         local localPlayer = LocalPlayer()
 
@@ -449,10 +448,11 @@ elseif CLIENT then
             if swordTarget.player then
                 if IsLivingPlayer(swordTarget.player) then
                     glowTarget = {swordTarget.player}
-                elseif RAGDOLL_STAB_COVERUP:GetBool() then
-                    local targetRag = GetTargetRagdoll() --slow & i hate
-                    if IsValid(targetRag) then glowTarget = {targetRag} end
+
+                elseif RAGDOLL_STAB_COVERUP:GetBool() and IsValid(swordTarget.ragdoll) then
+                    glowTarget = {swordTarget.ragdoll}
                 end
+
             elseif inRange then
                 glowTarget = {localPlayer:GetEyeTrace(MASK_SHOT).Entity}
             end
@@ -493,7 +493,7 @@ elseif CLIENT then
     net.Receive(SWORD_KILLED_MSG, function()
         local isPapped = net.ReadBool()
         local swordEnt = net.ReadEntity()
-        DebugPrint("[SWORD_KILLED_MSG]", swordEnt, IsValid(swordEnt), isPapped)
+        DebugPrint("[SoPD Client] Received kill msg;", swordEnt, IsValid(swordEnt), isPapped)
 
         if not isPapped and IsValid(swordEnt) then
             local choice
@@ -508,25 +508,14 @@ elseif CLIENT then
                 choice = "triumph_other"
             end
 
-            DebugPrint("[SFX] Playing on-kill triumph sound", choice)
+            DebugPrint("[SoPD SFX] Playing on-kill triumph sound", choice)
             swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
         end
     end)
 
-    function UpdateAllUIsDelayed()
-        --target may not be considered dead/living yet
-        timer.Simple(0.1, function()
-            for _, sword in ipairs(GetAllRealSwords()) do
-                sword:UpdateUI("target died/revived")
-            end
-        end)
-    end
-    net.Receive(TARGET_DIED_MSG, UpdateAllUIsDelayed)
-    net.Receive(TARGET_SPAWNED_MSG, UpdateAllUIsDelayed)
-
     -- update sword's shop & initialization info
     function UpdateSwordMeta(reason)
-        DebugPrint("Updating sword meta... ("..reason..")")
+        DebugPrint("[SoPD Client] Updating sword meta... ("..reason..")")
 
         -- update description (text-building logic yippie)
         local desc = ""
@@ -760,18 +749,16 @@ function SWEP:PrimaryAttack()
             else
                 local IS_RAG        = hitEnt:GetClass() == "prop_ragdoll"
                 local IS_PLAYER_RAG = hitEnt:IsPlayerRagdoll()
-                local TARGET_MATCH = swordTarget.player ~= nil and (hitEnt.PlyOwner == swordTarget.player)
-                if hitEnt.scene and hitEnt.scene.plySID64 == swordTarget.SID64 then
-                    TARGET_MATCH = true
-                end
-                local UNTARGET_PAP = swordTarget.player == nil and self.Packed == true
+                local TARGET_MATCH  = hitEnt == swordTarget.ragdoll or hitEnt.sid64 == swordTarget.SID64
+                local UNTARGET_PAP  = swordTarget.player == nil and self.Packed == true
                 local isRagStab = IS_RAG and IS_PLAYER_RAG and (TARGET_MATCH or UNTARGET_PAP)
 
-                DebugPrint("• RAGSTAB - "         .. tostring(isRagStab)
-                    .. " -> is ragdoll: "         .. tostring(IS_RAG)
-                    .. " & is of player: "        .. tostring(IS_PLAYER_RAG)
-                    .. " & target match: "        .. tostring(TARGET_MATCH)
-                    .. " | targetless pap: "      .. tostring(UNTARGET_PAP))
+                DebugPrint("• RAGSTAB - "    .. tostring(isRagStab)
+                    .. " -> is ragdoll: "    .. tostring(IS_RAG)
+                    .. " & is of player: "   .. tostring(IS_PLAYER_RAG)
+                    .. " & target match: "   .. tostring(TARGET_MATCH)
+                    .. " | targetless pap: " .. tostring(UNTARGET_PAP)
+                    .. " (targeted: "        .. tostring(swordTarget.player ~= nil) .. ")")
 
                 if isRagStab then
                     self:StabRagdoll(tr, spos, sdest)
@@ -810,7 +797,7 @@ end
 function SWEP:UpdateAmmo()
     -- Existing PaP'd swords needs to have ammo updated if sword becomes targetless
     -- Note: Not needed the other way around since a round without a target will never "gain" a target (no need to call after setting/changing target or to make the sword ammo-less again)
-    if self.Packed then
+    if self.Packed and not swordTarget.player then
         self.Primary.ClipSize = 1
         self:SetClip1(not self.StabbedTarget and 1 or 0)
     end
@@ -908,12 +895,11 @@ if SERVER then
             net.WriteEntity(stuckSword)
             net.Broadcast()
             if packEffect then packEffect(swepRef, rag, owner) end
-            DebugPrint("[SWORD_KILLED_MSG] Sent")
+            DebugPrint("[SoPD Server] Sent kill msg")
         end
 
         --dispatch killing attack, trigger sword sticking function & clean up
         target:DispatchTraceAttack(dmg, spos + (owner:GetAimVector() * 3), sdest)
-        self.KilledTarget = true
         self:Consume(false)
     end
 
@@ -956,7 +942,7 @@ if SERVER then
             local stabSnd = "rag_stab1"
             if math.random() > 0.8 then stabSnd = "rag_stab2" end
 
-            DebugPrint("[SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol)
+            DebugPrint("[SoPD SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol)
             stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
         end
 
@@ -985,7 +971,7 @@ if SERVER then
 
     function SWEP:StartDeploySound(reason)
         if self.DeploySound and self.DeploySound:IsPlaying() then
-            DebugPrint("[SFX] Not starting deploy sound caused by "..reason.." - song already playing.")
+            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - song already playing.")
             return
         end
 
@@ -993,7 +979,7 @@ if SERVER then
 
         if IsValid(owner) and self:CanStab()
           and (IsLivingPlayer(swordTarget.player) or not swordTarget.player) then
-            DebugPrint("[SFX] Starting deploy sound due to "..reason)
+            DebugPrint("[SoPD SFX] Starting deploy sound due to "..reason)
 
             local deploySnd = "gourmet"
             if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
@@ -1005,18 +991,18 @@ if SERVER then
             self.DeploySound:PlayEx(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100), 100)
 
         else
-            DebugPrint("[SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
+            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
         end
     end
 
     function SWEP:StopDeploySound(reason)
         if self.DeploySound and self.DeploySound:IsPlaying() then
-            DebugPrint("[SFX] Stopping deploy sound due to "..reason)
+            DebugPrint("[SoPD SFX] Stopping deploy sound due to "..reason)
             self.DeploySound:Stop()
             self.DeploySound = nil
 
         else
-            DebugPrint("[SFX] Not stopping deploy caused by "..reason.." - song not playing.")
+            DebugPrint("[SoPD SFX] Not stopping deploy caused by "..reason.." - song not playing.")
         end
     end
 

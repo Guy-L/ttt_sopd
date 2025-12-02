@@ -19,8 +19,19 @@ function UPGRADE:Apply(SWEP)
         SWEP:AddTTT2HUDHelp("sopd_instruction_pap_lmb")
     end
 
+    -- API method for this doesn't appear to work lol
+    local function GetRagdollOwner(rag)
+        for _, ply in ipairs(player.GetAll()) do
+            if ply:SteamID64() == rag.sid64 then
+                return ply
+            end
+        end
+
+        return nil
+    end
+
     function SWEP:PackEffect(rag, owner)
-        self.packVictim = rag.PlyOwner
+        self.packVictim = GetRagdollOwner(rag)
         owner:EmitSound(sounds["inhale"], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_VOICE)
 
         -- delays to line up with suck sfx

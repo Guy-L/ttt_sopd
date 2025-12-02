@@ -101,7 +101,7 @@ function UPGRADE:Apply(SWEP)
 
         function SWEP:PackEffect(rag, owner)
             -- play kirby inhale noise
-            owner:EmitSound(sounds["inhale"], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_VOICE)
+            owner:EmitSound(sounds["inhale"], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_VOICE)
 
             -- delay eating to line up with suck sfx
             timer.Simple(2, function()

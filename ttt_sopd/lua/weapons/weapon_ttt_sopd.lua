@@ -42,10 +42,11 @@ PAP_DMG_BLOCK = CreateConVar("ttt2_sopd_pap_dmg_block", 0, CVAR_FLAGS, "Percent 
 
 local DEPLOY_SND_SOUNDLEVEL = CreateConVar("ttt2_sopd_sfx_deploy_soundlevel", 100, CVAR_FLAGS, "The Sword deploy song's soundlevel (how far it can be heard).", 0, 300)
 local DEPLOY_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_deploy_volume", 100, CVAR_FLAGS, "The Sword deploy song's volume, before any reductions.", 0, 100)
-KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any reductions.", 0, 100) --used by PaP
+local KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any reductions.", 0, 100)
 local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 local STEALTH_VOL_REDUCTION = CreateConVar("ttt2_sopd_sfx_stealth_vol_reduction", 50, CVAR_FLAGS, "The volume of Sword sounds is reduced by this factor when many opponents (inno/side teams) are alive.", 0, 100)
 local STEALTH_MAX_OPPS = CreateConVar("ttt2_sopd_sfx_stealth_max_opps", 10, CVAR_FLAGS, "The stealth volume reduction on Sword sound effects is fully applied when this many opponents (inno/side teams) or more are alive, then goes down linearly with the number of remaining opponents (to zero effect when only one opponent left).", 2, 24)
+local STEALTH_STAB_FACTOR = CreateConVar("ttt2_sopd_sfx_stealth_stab_factor", 50, CVAR_FLAGS, "Multiplier to the stealth volume reduction factor for stabbing noises.", 0, 100)
 
 local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debug prints for client & server (should not be on for real play).", 0, 1)
 
@@ -116,20 +117,30 @@ function GetOpponentCount()
 end
 
 -- stealth volume reduction effect adjustment
-function AdjustVolume(base_vol)
+function AdjustVolume(isStab)
     local maxReduction = STEALTH_VOL_REDUCTION:GetFloat() / 100
     local maxOpps      = STEALTH_MAX_OPPS:GetInt()
+    local baseVol
+
+    -- make effect half as strong for stabbing noises
+    if isStab then
+        baseVol = KILL_SND_VOLUME:GetFloat() / 100
+        maxReduction = maxReduction * (STEALTH_STAB_FACTOR:GetFloat() / 100)
+    else
+        baseVol = DEPLOY_SND_VOLUME:GetFloat() / 100
+    end
 
     -- we remove 1 from count/max so that 1 opp = 0 reduction & max opp or more = full reduction
-    local reductionStrength = math.min((GetOpponentCount() - 1) / (maxOpps - 1), 1)
-    local finalVolume = (1 - reductionStrength * maxReduction) * base_vol
+    local oppCount = GetOpponentCount()
+    local reductionStrength = math.min((oppCount - 1) / (maxOpps - 1), 1)
+    local finalVolume = math.max((1 - reductionStrength * maxReduction) * baseVol, 0)
 
-    DebugPrint("[SoPD SFX] base volume", base_vol, "max reduction", maxReduction,
-             "\n[SoPD SFX] max opps", maxOpps, "opp count", GetOpponentCount(),
+    DebugPrint("[SoPD SFX] base volume", baseVol, "max reduction", maxReduction, "is stab", isStab,
+             "\n[SoPD SFX] max opps", maxOpps, "opp count", oppCount,
              "\n[SoPD SFX] -> reduction strength", reductionStrength,
-             "\n[SoPD SFX] -> adjusted volume", math.max(finalVolume, 0))
+             "\n[SoPD SFX] -> adjusted volume", finalVolume)
 
-    return math.max(finalVolume, 0)
+    return finalVolume
 end
 
 function GetAllRealSwords()
@@ -305,7 +316,7 @@ if SERVER then
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
                     DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
-                    wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
+                    wep.DeploySound:ChangeVolume(AdjustVolume(false))
                 end
             end
         end
@@ -330,7 +341,7 @@ if SERVER then
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
                     DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick())
-                    wep.DeploySound:ChangeVolume(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100))
+                    wep.DeploySound:ChangeVolume(AdjustVolume(false))
                 end
             end
         end
@@ -568,7 +579,7 @@ elseif CLIENT then
             end
 
             DebugPrint("[SoPD SFX] Playing on-kill triumph sound", choice)
-            swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100), CHAN_BODY)
+            swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_BODY)
         end
     end)
 
@@ -1007,7 +1018,7 @@ if SERVER then
             -- concealing death cause here if enabled
             if RAGDOLL_STAB_COVERUP:GetBool() then
                 --gameplay relevant mechanic should have SOME risk
-                stabVol = math.max(stabVol, AdjustVolume(KILL_SND_VOLUME:GetFloat()/100))
+                stabVol = math.max(stabVol, AdjustVolume(true))
 
                 hitRagdoll.was_headshot = false
                 hitRagdoll.dmgwep = CLASS_NAME
@@ -1067,7 +1078,7 @@ if SERVER then
 
             self.DeploySound = CreateSound(owner, sounds[deploySnd])
             self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
-            self.DeploySound:PlayEx(AdjustVolume(DEPLOY_SND_VOLUME:GetFloat()/100), 100)
+            self.DeploySound:PlayEx(AdjustVolume(false), 100)
 
         else
             DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
@@ -1287,6 +1298,11 @@ elseif CLIENT then
             serverConvar = "ttt2_sopd_sfx_stealth_max_opps",
             label = "label_sopd_sfx_stealth_max_opps",
             min = 2, max = 24, decimal = 0
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_stealth_stab_factor",
+            label = "label_sopd_sfx_stealth_stab_factor",
+            min = 0, max = 100, decimal = 0
         })
 
         local formMisc = vgui.CreateTTT2Form(parent, "label_sopd_misc_form")

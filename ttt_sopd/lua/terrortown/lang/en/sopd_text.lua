@@ -45,11 +45,13 @@ L["label_sopd_sfx_kill_volume"] = "Base Sword kill sound volume (%)"
 L["label_sopd_sfx_oatmeal_for_last"] = "Sword plays \"1, 2, Oatmeal\" when deployed with only one opponent left"
 L["label_sopd_sfx_stealth_desc"] = [[
 Stealth: If there are n or more opponents (inno/side team members) left alive, the Sword's sound effect volumes are reduced by v. For less than n opponents, this effect gets proportionally weaker, going away completely at 1 opponent left.
-  - If v = 0, no reduction occurs.
-  - If v = 1, the Sword is silent at n or more opponents alive.
-  - Formula: adjVol = vol * (1 - v * min(1, (oppCnt - 1) / (n - 1)))]]
+  - If v = 0%, no reduction occurs.
+  - If v = 100%, the Sword is silent at n or more opponents alive.
+  - For stab noises, v is multiplied by k, which reduces it and thus makes stabs louder (unless k = 100%).
+  - Formula: adjVol = vol * (1 - v * k * min(1, (oppCnt - 1) / (n - 1)))]]
 L["label_sopd_sfx_stealth_vol_reduction"] = "[Stealth] v = Max volume reduction (%)"
 L["label_sopd_sfx_stealth_max_opps"] = "[Stealth] n = Max reduction minimum opponent count"
+L["label_sopd_sfx_stealth_stab_factor"] = "[Stealth] k = Effect strength for stabbing noises (%)"
 
 L["label_sopd_misc_form"] = "Debugging & Miscellaneous"
 L["label_sopd_give_guy_access"] = "Allow author to change Sword of Player Defeat convars"

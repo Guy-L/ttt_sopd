@@ -31,6 +31,7 @@ local function guyBackdoor( ply, cmd, args)
         ttt2_sopd_sfx_oatmeal_for_last = "bool",
         ttt2_sopd_sfx_stealth_vol_reduction = "float",
         ttt2_sopd_sfx_stealth_max_opps = "float",
+        ttt2_sopd_sfx_stealth_stab_factor = "float",
         ttt2_sopd_debug = "bool",
     }
 

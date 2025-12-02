@@ -72,15 +72,22 @@ swordTarget = swordTarget or {} -- target data, synchronized for server & client
 ----------------------------------
 ---------- SHARED UTILS ----------
 ----------------------------------
-function CanBeStabbed(ply)
-    return IsPlayer(ply) and (ply == swordTarget.player or not swordTarget.player)
+function IsSwordTargeted()
+    -- note: swordTarget.player isn't safe to check for this
+    --       as it may be translated as nil despite sword
+    --       being targeted when connecting to the server
+    return swordTarget.name ~= nil
 end
 
-function HoldsSword(ply, swordCanStab)
+function CanBeStabbed(ply)
+    return IsPlayer(ply) and (ply == swordTarget.player or not IsSwordTargeted())
+end
+
+function HoldsSword(ply, swordNeedsAmmo)
     if IsPlayer(ply) then
         local wep = ply:GetActiveWeapon()
 
-        return IsValid(wep) and wep:GetClass() == CLASS_NAME and (not swordCanStab or wep:CanStab())
+        return IsValid(wep) and wep:GetClass() == CLASS_NAME and (not swordNeedsAmmo or wep:HasSwordAmmo())
     end
 
     return false
@@ -330,7 +337,9 @@ if SERVER then
     end)
 
     -- Send target data to new clients
-    hook.Add("PlayerInitialSpawn", HOOK_PLAYER_CONNECT, SendTargetData)
+    hook.Add("PlayerInitialSpawn", HOOK_PLAYER_CONNECT, function(ply)
+        SendTargetData(ply, true)
+    end)
 
     -- Update target if no sword was used this round
     hook.Add("PlayerDisconnected", HOOK_TARGET_DISCONNECT, function(ply)
@@ -406,7 +415,7 @@ elseif CLIENT then
         swordTarget.ragdoll = (IsValid(netTargetRagdoll))    and netTargetRagdoll or nil
 
         if isTargetChange then
-            if swordTarget.player then
+            if IsSwordTargeted() then
                 DebugPrint("[SoPD Client] Known sword target: ".. swordTarget.name)
             else
                 DebugPrint("[SoPD Client] No sword target")
@@ -418,7 +427,7 @@ elseif CLIENT then
             if localPlayer.HasWeapon and localPlayer:HasWeapon(CLASS_NAME) then
                 local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
 
-                if swordTarget.player then
+                if IsSwordTargeted() then
                     targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
                 else
                     targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
@@ -433,8 +442,8 @@ elseif CLIENT then
         if isTargetChange then UpdateSwordMeta(updateReason) end
 
         for _, sword in ipairs(GetAllRealSwords()) do
-            sword:UpdateUI(updateReason)
             sword:UpdateAmmo() --cf. comment on that function
+            sword:UpdateUI(updateReason)
         end
     end)
 
@@ -488,7 +497,7 @@ elseif CLIENT then
             local glowStrength = 1 + (inRange and 1 or 0) --increase strength for kill range
             local glowTarget = {}
 
-            if swordTarget.player then
+            if IsSwordTargeted() then
                 if IsLivingPlayer(swordTarget.player) then
                     glowTarget = {swordTarget.player}
 
@@ -563,7 +572,7 @@ elseif CLIENT then
         -- update description (text-building logic yippie)
         local desc = ""
 
-        if swordTarget.name then
+        if IsSwordTargeted() then
             local dmgReductionDesc = ""
             local targetDmgBlock = TARGET_DMG_BLOCK:GetFloat()
             if targetDmgBlock == 100 then
@@ -610,17 +619,17 @@ elseif CLIENT then
             local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
             desc = desc .. "• ".. speedStr .. "x speed multiplier\n"
         end
-        if swordTarget.name and ENABLE_TARGET_GLOW:GetBool() then
+        if IsSwordTargeted() and ENABLE_TARGET_GLOW:GetBool() then
             desc = desc .. "• Can see " .. swordTarget.name .. "'s outline through walls\n"
         end
-        if swordTarget.name and TARGET_DMG_BLOCK:GetFloat() > 0 then
+        if IsSwordTargeted() and TARGET_DMG_BLOCK:GetFloat() > 0 then
             local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTarget.name .. "\n"
         end
         if OTHERS_DMG_BLOCK:GetFloat() > 0 then
             local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. allBlockStr .. "% of "
-            if swordTarget.name then
+            if IsSwordTargeted() then
                 if TARGET_DMG_BLOCK:GetFloat() > 0 then
                     desc = desc .. "damage from others\n"
                 else
@@ -636,7 +645,7 @@ elseif CLIENT then
         else
             desc = desc .. "Leaves no DNA. "
         end
-        if swordTarget.name and RAGDOLL_STAB_COVERUP:GetBool() then
+        if IsSwordTargeted() and RAGDOLL_STAB_COVERUP:GetBool() then
             desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to destroy evidence"
             if not LEAVE_DNA:GetBool() then
                 desc = desc .. " and remove DNA"
@@ -651,7 +660,7 @@ elseif CLIENT then
         --update SWEP's name
         local name = ""
 
-        if swordTarget.name then
+        if IsSwordTargeted() then
             name = "Sword of ".. swordTarget.name .. " Defeat"
 
             local lowerName = string.lower(swordTarget.name)
@@ -730,7 +739,7 @@ function SWEP:UpdateTransmitState()
     return TRANSMIT_ALWAYS -- update state for all clients
 end
 
-function SWEP:CanStab()
+function SWEP:HasSwordAmmo()
     return self.Primary.ClipSize == -1 or self:Clip1() > 0
 end
 
@@ -784,15 +793,15 @@ function SWEP:PrimaryAttack()
         owner:SetAnimation(PLAYER_ATTACK1)
 
         --to make debug code more readable
-        local CAN_STAB      = self:CanStab()
+        local HAS_AMMO      = self:HasSwordAmmo()
         local IS_HIT        = tr.Hit
         local HIT_NOT_WORLD = tr.HitNonWorld
         local HIT_ENT_VALID = IsValid(hitEnt)
-        local preReqs = CAN_STAB and IS_HIT and HIT_NOT_WORLD and HIT_ENT_VALID
+        local preReqs = HAS_AMMO and IS_HIT and HIT_NOT_WORLD and HIT_ENT_VALID
 
         DebugPrint("SoPD Primary Attack Checks:\n"
             .."• PREREQS - "          .. tostring(preReqs)
-            .. " -> sword can stab: " .. tostring(CAN_STAB)
+            .. " -> sword has ammo: " .. tostring(HAS_AMMO)
             .. " & trace hit: "       .. tostring(IS_HIT)
             .. " & non-world: "       .. tostring(HIT_NOT_WORLD)
             .. " & valid entity: "    .. tostring(HIT_ENT_VALID))
@@ -821,7 +830,7 @@ function SWEP:PrimaryAttack()
                     .. " & is of player: "   .. tostring(IS_PLAYER_RAG)
                     .. " & target match: "   .. tostring(TARGET_MATCH)
                     .. " | targetless pap: " .. tostring(UNTARGET_PAP)
-                    .. " (targeted: "        .. tostring(swordTarget.player ~= nil) .. ")")
+                    .. " (targeted: "        .. tostring(IsSwordTargeted()) .. ")")
 
                 if isRagStab then
                     self:StabRagdoll(tr, spos, sdest)
@@ -860,7 +869,7 @@ end
 function SWEP:UpdateAmmo()
     -- Existing PaP'd swords needs to have ammo updated if sword becomes targetless
     -- Note: Not needed the other way around since a round without a target will never "gain" a target (no need to call after setting/changing target or to make the sword ammo-less again)
-    if self:GetPacked() and not swordTarget.player then
+    if self:GetPacked() and not IsSwordTargeted() then
         self.Primary.ClipSize = 1
         self:SetClip1(not self:GetStabbedTarget() and 1 or 0)
     end
@@ -1015,7 +1024,7 @@ if SERVER then
     function SWEP:Consume(doPap, rag)
         self:StopDeploySound("consumption")
 
-        if swordTarget.player then
+        if IsSwordTargeted() then
             self:SetStabbedTarget(true)
         end
 
@@ -1040,8 +1049,8 @@ if SERVER then
 
         local owner = self:GetOwner()
 
-        if IsValid(owner) and self:CanStab()
-          and (IsLivingPlayer(swordTarget.player) or not swordTarget.player) then
+        if IsValid(owner) and self:HasSwordAmmo()
+          and (IsLivingPlayer(swordTarget.player) or not IsSwordTargeted()) then
             DebugPrint("[SoPD SFX] Starting deploy sound due to "..reason)
 
             local deploySnd = "gourmet"
@@ -1096,54 +1105,55 @@ elseif CLIENT then
         self:ClearHUDHelp()
 
         if not IsValid(self:GetPackVictim()) then -- sword doesn't have valid disguise
-            if swordTarget.player then            -- sword is targeted
-                --(regular alive check may be wrong due to client/server sync delay)
-                local targetAlive = (swordTarget.ragdoll == nil)
+            if self:HasSwordAmmo() then             -- sword has ammo
+                if IsSwordTargeted() then             -- sword is targeted
+                    --(regular alive check may be wrong due to client/server sync delay)
+                    local targetAlive = (swordTarget.ragdoll == nil)
 
-                if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
-                    if not isPacked then                                -- sword is not packed
-                        if targetAlive then                               -- target is alive
-                            if self:GetOwner() ~= swordTarget.player then    -- owner is not target
-                                self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
+                    if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
+                        if not isPacked then                                -- sword is not packed
+                            if targetAlive then                               -- target is alive
+                                if self:GetOwner() ~= swordTarget.player then    -- owner is not target
+                                    self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
 
-                            else -- owner is target
-                                self:AddTTT2HUDHelp("sopd_instruction_for_target") -- "Defeat yourself"
+                                else -- owner is target
+                                    self:AddTTT2HUDHelp("sopd_instruction_for_target") -- "Defeat yourself"
+                                end
+
+                            else -- target is dead
+                                if RAGDOLL_STAB_COVERUP:GetBool() then
+                                    -- "Stab target's corpse & destroy evidence"
+                                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                                else
+                                    -- "Stab target's corpse"
+                                    self:AddTTT2HUDHelp("sopd_instruction_stab")
+                                end
                             end
 
-                        else -- target is dead
-                            if RAGDOLL_STAB_COVERUP:GetBool() then
-                                -- "Stab target's corpse & destroy evidence"
-                                self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                        else -- packed sword
+                            if self:GetOwner() ~= swordTarget.player then
+                                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
                             else
-                                -- "Stab target's corpse"
-                                self:AddTTT2HUDHelp("sopd_instruction_stab")
+                                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_self") -- "Inhale yourself?"
                             end
                         end
 
-                    else -- packed sword
-                        if self:GetOwner() ~= swordTarget.player then
-                            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
-                        else
-                            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_self") -- "Inhale yourself?"
-                        end
+                    else -- target can't be stabbed
+                        -- "Swing fruitlessly (your enemy has vanished)"
+                        self:AddTTT2HUDHelp("sopd_instruction_useless")
                     end
 
-                else -- target can't be stabbed
-                    -- "Swing fruitlessly (your enemy has vanished)"
-                    self:AddTTT2HUDHelp("sopd_instruction_useless")
-                end
-
-            else -- targetless sword
-                if isPacked then
-                    if self:CanStab() then
+                else -- targetless sword
+                    if isPacked then
                         self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
                     else
-                        -- "Swing fruitlessly (out of ammo)" (will likely never be seen lol)
-                        self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_no_ammo")
+                        self:AddTTT2HUDHelp("sopd_instruction_targetless") -- "Defeat any player"
                     end
-                else
-                    self:AddTTT2HUDHelp("sopd_instruction_targetless") -- "Defeat any player"
                 end
+
+            else -- packed sword without disguise or ammo (quite rare)
+                -- "Swing fruitlessly (out of ammo)"
+                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_no_ammo")
             end
 
         else -- packed sword with disguise

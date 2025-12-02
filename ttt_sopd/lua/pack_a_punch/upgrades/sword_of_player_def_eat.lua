@@ -31,9 +31,7 @@ elseif SERVER then
     hook.Add("PlayerDisconnected", HOOK_DISGUISE_DISCONNECT, function(leavingPly)
         for _, ply in ipairs(player.GetAll()) do
             if ply.storedDisguiserTarget == leavingPly then
-                -- note: also affects regular ID disguise which is probably good
-                --       if not desired, could check disconnected player matches
-                --       PackVictim of any sword in world before sending messages
+                -- note: also affects regular ID disguise which is probably for the best
                 ply:ChatPrint("Disguise broke (player disconnected).")
 
                 for _, wep in ipairs(ply:GetWeapons()) do
@@ -53,7 +51,7 @@ end
 ----------------------------------
 function UPGRADE:Apply(SWEP)
     --targetless PaP swords have limited ammo for reasons that should be obvious
-    if not swordTarget.player then self:SetClip(SWEP, 1) end
+    if not IsSwordTargeted() then self:SetClip(SWEP, 1) end
 
     ----------------------------------
     ------ CLIENT REALM UPDATES ------
@@ -127,6 +125,9 @@ function UPGRADE:Apply(SWEP)
 
                 elseif owner.ActivateDisguiserTarget then
                     owner:ChatPrint("Disguise failed (player disconnected).")
+                    net.Start(DISGUISE_DISCONNECT_MSG)
+                    net.Send(owner)
+
                 else
                     owner:ChatPrint("Disguise failed (ID disguise addon missing).")
                 end

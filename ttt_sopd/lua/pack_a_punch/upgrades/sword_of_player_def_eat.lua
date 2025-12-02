@@ -31,6 +31,11 @@ elseif SERVER then
     hook.Add("PlayerDisconnected", HOOK_DISGUISE_DISCONNECT, function(leavingPly)
         for _, ply in ipairs(player.GetAll()) do
             if ply.storedDisguiserTarget == leavingPly then
+                -- note: also affects regular ID disguise which is probably good
+                --       if not desired, could check disconnected player matches
+                --       PackVictim of any sword in world before sending messages
+                ply:ChatPrint("Disguise broke (player disconnected).")
+
                 for _, wep in ipairs(ply:GetWeapons()) do
                     if wep:GetClass() == UPGRADE.class and wep:GetPackVictim() == leavingPly then
                         net.Start(DISGUISE_DISCONNECT_MSG)
@@ -119,6 +124,11 @@ function UPGRADE:Apply(SWEP)
 
                     net.Start(GOT_DISGUISE_MSG)
                     net.Send(owner)
+
+                elseif owner.ActivateDisguiserTarget then
+                    owner:ChatPrint("Disguise failed (player disconnected).")
+                else
+                    owner:ChatPrint("Disguise failed (ID disguise addon missing).")
                 end
             end)
         end

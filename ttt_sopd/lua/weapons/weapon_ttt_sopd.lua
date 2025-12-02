@@ -1101,15 +1101,16 @@ elseif CLIENT then
             self.PrintName = curMetaSWEP.PrintName
         end
 
+        -- regular alive check may be wrong due to client/server sync delay
+        local targetAlive = (swordTarget.ragdoll == nil)
+
         -- update tooltip instructions
         self:ClearHUDHelp()
+        local packVictim = self:GetPackVictim()
 
-        if not IsValid(self:GetPackVictim()) then -- sword doesn't have valid disguise
-            if self:HasSwordAmmo() then             -- sword has ammo
-                if IsSwordTargeted() then             -- sword is targeted
-                    --(regular alive check may be wrong due to client/server sync delay)
-                    local targetAlive = (swordTarget.ragdoll == nil)
-
+        if not IsValid(packVictim) then -- sword doesn't have valid disguise
+            if self:HasSwordAmmo() then   -- sword has ammo
+                if IsSwordTargeted() then    -- sword is targeted
                     if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
                         if not isPacked then                                -- sword is not packed
                             if targetAlive then                               -- target is alive
@@ -1157,8 +1158,14 @@ elseif CLIENT then
             end
 
         else -- packed sword with disguise
-            -- "Swing triumphantly" / "Toggle copy ability (disguise)"
-            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb2", "sopd_instruction_pap_rmb")
+            local disguiseLMBInstruction = "sopd_instruction_pap_lmb2" -- "Swing triumphantly"
+
+            if IsSwordTargeted() and targetAlive then -- likely impossible (easter egg)
+                disguiseLMBInstruction = "sopd_instruction_pap_lmb_what"
+            end
+
+                                                  --  + "Toggle copy ability (disguise)"
+            self:AddTTT2HUDHelp(disguiseLMBInstruction, "sopd_instruction_pap_rmb")
         end
     end
 

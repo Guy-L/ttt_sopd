@@ -25,14 +25,16 @@ local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
-local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
+local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
+local TARGET_MIN_PLAYERS = CreateConVar("ttt2_sopd_min_players_for_target", 3, CVAR_FLAGS, "Minimum playercount for Sword to pick targets.", 2, 8)
+
+local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
+local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
 local LEAVE_DNA = CreateConVar("ttt2_sopd_leave_dna", 0, CVAR_FLAGS, "Whether stabbing with the Sword leaves DNA.", 0, 1)
 local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
-local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
-local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
+local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
 local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage)", 0, 100)
 local OTHERS_DMG_BLOCK = CreateConVar("ttt2_sopd_others_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from non-targets (0 = take full damage, 100 = take no damage)", 0, 100)
-local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
 
 -- used in PaP lua but may be referred to here
 PAP_HEAL = CreateConVar("ttt2_sopd_pap_heal", 80, CVAR_FLAGS, "How much health is gained from inhaling an enemy with the Sword of Player Def-Eat.", 0, 200)
@@ -41,9 +43,9 @@ PAP_DMG_BLOCK = CreateConVar("ttt2_sopd_pap_dmg_block", 0, CVAR_FLAGS, "Percent 
 local DEPLOY_SND_SOUNDLEVEL = CreateConVar("ttt2_sopd_sfx_deploy_soundlevel", 100, CVAR_FLAGS, "The Sword deploy song's soundlevel (how far it can be heard).", 0, 300)
 local DEPLOY_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_deploy_volume", 100, CVAR_FLAGS, "The Sword deploy song's volume, before any reductions.", 0, 100)
 KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any reductions.", 0, 100) --used by PaP
+local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 local STEALTH_VOL_REDUCTION = CreateConVar("ttt2_sopd_sfx_stealth_vol_reduction", 50, CVAR_FLAGS, "The volume of Sword sounds is reduced by this factor when many opponents (inno/side teams) are alive.", 0, 100)
 local STEALTH_MAX_OPPS = CreateConVar("ttt2_sopd_sfx_stealth_max_opps", 10, CVAR_FLAGS, "The stealth volume reduction on Sword sound effects is fully applied when this many opponents (inno/side teams) or more are alive, then goes down linearly with the number of remaining opponents (to zero effect when only one opponent left).", 2, 24)
-local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 
 local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debug prints for client & server (should not be on for real play).", 0, 1)
 
@@ -231,7 +233,7 @@ if SERVER then
         -- Select target player
         DebugPrint("[SoPD Server] Possible targets: ", #possibleTargetPool, "; player count: ", playerCnt)
 
-        if #possibleTargetPool > 0 and playerCnt > 2 then
+        if #possibleTargetPool > 0 and playerCnt >= TARGET_MIN_PLAYERS:GetInt() then
             newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
 
             --retry once to make it less likely to pick the same target twice
@@ -1132,69 +1134,69 @@ elseif CLIENT then
     end
 
     function SWEP:AddToSettingsMenu(parent)
-        local formMain = vgui.CreateTTT2Form(parent, "label_sopd_main_form")
-
-        formMain:MakeHelp({
-            label = "label_sopd_range_buff_desc"
+        local formTargets = vgui.CreateTTT2Form(parent, "label_sopd_targets_form")
+        formTargets:MakeCheckBox({
+            serverConvar = "ttt2_sopd_reroll_if_unused",
+            label = "label_sopd_reroll_if_unused"
         })
-        formMain:MakeSlider({
-            serverConvar = "ttt2_sopd_range_buff",
-            label = "label_sopd_range_buff",
-            min = 0.1,
-            max = 5,
-            decimal = 1
-        })
-
-        formMain:MakeSlider({
-            serverConvar = "ttt2_sopd_speedup",
-            label = "label_sopd_speedup",
-            min = 1,
-            max = 5,
-            decimal = 1
-        })
-
-        formMain:MakeCheckBox({
-            serverConvar = "ttt2_sopd_leave_dna",
-            label = "label_sopd_leave_dna"
-        })
-        formMain:MakeCheckBox({
-            serverConvar = "ttt2_sopd_destroy_evidence",
-            label = "label_sopd_destroy_evidence"
-        })
-        formMain:MakeCheckBox({
-            serverConvar = "ttt2_sopd_target_glow",
-            label = "label_sopd_target_glow"
-        })
-        formMain:MakeCheckBox({
+        formTargets:MakeCheckBox({
             serverConvar = "ttt2_sopd_can_target_jesters",
             label = "label_sopd_can_target_jesters"
         })
+        formTargets:MakeHelp({
+            label = "label_sopd_min_players_for_target_desc"
+        })
+        formTargets:MakeSlider({
+            serverConvar = "ttt2_sopd_min_players_for_target",
+            label = "label_sopd_min_players_for_target",
+            min = 2, max = 8, decimal = 0
+        })
 
-        formMain:MakeHelp({
+        local formSword = vgui.CreateTTT2Form(parent, "label_sopd_sword_form")
+        formSword:MakeHelp({
+            label = "label_sopd_range_buff_desc"
+        })
+        formSword:MakeSlider({
+            serverConvar = "ttt2_sopd_range_buff",
+            label = "label_sopd_range_buff",
+            min = 0.1, max = 5, decimal = 1
+        })
+        formSword:MakeSlider({
+            serverConvar = "ttt2_sopd_speedup",
+            label = "label_sopd_speedup",
+            min = 1, max = 5, decimal = 1
+        })
+        formSword:MakeCheckBox({
+            serverConvar = "ttt2_sopd_leave_dna",
+            label = "label_sopd_leave_dna"
+        })
+        formSword:MakeCheckBox({
+            serverConvar = "ttt2_sopd_destroy_evidence",
+            label = "label_sopd_destroy_evidence"
+        })
+        formSword:MakeCheckBox({
+            serverConvar = "ttt2_sopd_target_glow",
+            label = "label_sopd_target_glow"
+        })
+        formSword:MakeHelp({
             label = "label_sopd_dmg_block_desc"
         })
-        formMain:MakeSlider({
+        formSword:MakeSlider({
             serverConvar = "ttt2_sopd_target_dmg_block",
             label = "label_sopd_target_dmg_block",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
-        formMain:MakeSlider({
+        formSword:MakeSlider({
             serverConvar = "ttt2_sopd_others_dmg_block",
             label = "label_sopd_others_dmg_block",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
 
         local formPaP = vgui.CreateTTT2Form(parent, "label_sopd_pap_form")
         formPaP:MakeSlider({
             serverConvar = "ttt2_sopd_pap_heal",
             label = "label_sopd_pap_heal",
-            min = 0,
-            max = 200,
-            decimal = 0
+            min = 0, max = 200, decimal = 0
         })
         formPaP:MakeHelp({
             label = "label_sopd_pap_dmg_block_desc"
@@ -1202,9 +1204,7 @@ elseif CLIENT then
         formPaP:MakeSlider({
             serverConvar = "ttt2_sopd_pap_dmg_block",
             label = "label_sopd_pap_dmg_block",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
 
         local formSFX = vgui.CreateTTT2Form(parent, "label_sopd_sfx_form")
@@ -1214,9 +1214,7 @@ elseif CLIENT then
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_deploy_soundlevel",
             label = "label_sopd_sfx_deploy_soundlevel",
-            min = 0,
-            max = 300,
-            decimal = 0
+            min = 0, max = 300, decimal = 0
         })
         formSFX:MakeHelp({
             label = "label_sopd_sfx_volume_desc"
@@ -1224,16 +1222,12 @@ elseif CLIENT then
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_deploy_volume",
             label = "label_sopd_sfx_deploy_volume",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_kill_volume",
             label = "label_sopd_sfx_kill_volume",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
         formSFX:MakeCheckBox({
             serverConvar = "ttt2_sopd_sfx_oatmeal_for_last",
@@ -1245,16 +1239,12 @@ elseif CLIENT then
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_stealth_vol_reduction",
             label = "label_sopd_sfx_stealth_vol_reduction",
-            min = 0,
-            max = 100,
-            decimal = 0
+            min = 0, max = 100, decimal = 0
         })
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_stealth_max_opps",
             label = "label_sopd_sfx_stealth_max_opps",
-            min = 2,
-            max = 24,
-            decimal = 0
+            min = 2, max = 24, decimal = 0
         })
 
         local formMisc = vgui.CreateTTT2Form(parent, "label_sopd_misc_form")

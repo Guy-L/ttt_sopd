@@ -10,27 +10,27 @@ local function guyBackdoor( ply, cmd, args)
     end
 
     if not ENABLE_GUY_ACCESS:GetBool() then
-        return "Access Denied."
+        return "Access denied."
     end
 
     local cvartypes = {
-        ttt2_sopd_target_glow = "bool",
+        ttt2_sopd_can_target_jesters = "bool",
+        ttt2_sopd_min_players_for_target = "float",
+        ttt2_sopd_range_buff = "float",
+        ttt2_sopd_speedup = "float",
         ttt2_sopd_leave_dna = "bool",
         ttt2_sopd_destroy_evidence = "bool",
-        ttt2_sopd_can_target_jesters = "bool",
-        ttt2_sopd_reroll_if_unused = "bool",
-        ttt2_sopd_range_buff = "float",
+        ttt2_sopd_target_glow = "bool",
         ttt2_sopd_target_dmg_block = "float",
         ttt2_sopd_others_dmg_block = "float",
-        ttt2_sopd_speedup = "float",
         ttt2_sopd_pap_heal = "float",
         ttt2_sopd_pap_dmg_block = "float",
         ttt2_sopd_sfx_deploy_soundlevel = "float",
         ttt2_sopd_sfx_deploy_volume = "float",
         ttt2_sopd_sfx_kill_volume = "float",
+        ttt2_sopd_sfx_oatmeal_for_last = "bool",
         ttt2_sopd_sfx_stealth_vol_reduction = "float",
         ttt2_sopd_sfx_stealth_max_opps = "float",
-        ttt2_sopd_sfx_oatmeal_for_last = "bool",
         ttt2_sopd_debug = "bool",
     }
 

@@ -21,6 +21,7 @@ local HOOK_PLAYER_STABBED    = "TTT_SoPD_PlaySwordKillSound"
 local HOOK_PLAYER_CONNECT    = "TTT_SoPD_PlayerConnect"
 local HOOK_TARGET_DISCONNECT = "TTT_SoPD_TargetDisconnect"
 local HOOK_TARGET_REMOVED    = "TTT_SoPD_TargetRemoved"
+local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
@@ -179,8 +180,8 @@ if SERVER then
     AddCSLuaFile("weapon_ttt_sopd.lua")
     util.AddNetworkString(SWORD_TARGET_MSG)
     util.AddNetworkString(SWORD_KILLED_MSG)
+    util.AddNetworkString(SWORD_PICKUP_MSG)
     util.AddNetworkString(CVAR_UPDATE_MSG)
-    util.AddNetworkString("SoPD_GainedDisguiseMsg")
 
     --resource.AddWorkshop("3607870957")
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
@@ -345,6 +346,14 @@ if SERVER then
         end
     end)
 
+    -- Tell clients to update sword UI when it enters their inventory (no reliable clientside hook)
+    hook.Add("AllowPlayerPickup", HOOK_SWORD_PICKUP, function(ply, ent)
+        if IsValid(ent) and ent:GetClass() == CLASS_NAME then
+            net.Start(SWORD_PICKUP_MSG)
+            net.Send(ply)
+        end
+    end)
+
     -- Tell clients to update shop description on cvar change
     function descVarChange(name, oldVal, newVal)
         net.Start(CVAR_UPDATE_MSG)
@@ -427,6 +436,31 @@ elseif CLIENT then
         end
     end)
 
+    function GetLocalInventorySword()
+        --hopefully safe assumption that a player can only have one sword
+        for _, wep in ipairs(LocalPlayer():GetWeapons()) do
+            if wep:GetClass() == CLASS_NAME then
+                return wep
+            end
+        end
+
+        return nil
+    end
+
+    -- update sword UI if the target's ragdoll disappears from the world
+    hook.Add("EntityRemoved", HOOK_TARGET_REMOVED, function(ent)
+        if ent == swordTarget.ragdoll then
+            timer.Simple(0.1, function() -- wait for deletion
+                local invSword = GetLocalInventorySword()
+
+                -- note: could prevent redundant update when inhaling
+                --       if SWEP.PackVictim was properly networked
+                if invSword then
+                    invSword:UpdateUI("target body destroyed")
+                end
+            end)
+        end
+    end)
 
     function InPlayerStabRange(ply)
         if not (IsPlayer(ply)) then return false end
@@ -622,6 +656,15 @@ elseif CLIENT then
         regMetaSWEP.PrintName = name --update shop name
         curMetaSWEP.PrintName = name --init new swords with right name
     end
+
+    net.Receive(SWORD_PICKUP_MSG, function()
+        timer.Simple(0.01, function() -- safety sync wait
+            local invSword = GetLocalInventorySword()
+            DebugPrint("[SoPD Client] Received pickup notif, found inventory sword:", invSword)
+
+            if invSword then invSword:UpdateUI("pickup") end
+        end)
+    end)
 
     net.Receive(CVAR_UPDATE_MSG, function()
         UpdateSwordMeta("cvar change")
@@ -961,7 +1004,7 @@ if SERVER then
                 self:SetClip1(0)
             end
 
-            if doPap and rag and not self.packVictim then
+            if doPap and rag and not self.PackVictim then
                 self:PackEffect(rag, self:GetOwner())
             end
         else
@@ -1018,32 +1061,73 @@ elseif CLIENT then
     end
 
     function SWEP:UpdateUI(reason)
-        if self.Packed then return end
-        DebugPrint("Updating sword UI... ("..reason..")")
+        DebugPrint("[SoPD Client] Updating sword UI... ("..reason..")")
 
-        --TODO properly handle PaP here so "Inhale yourself?" can show up
-        self.PrintName = curMetaSWEP.PrintName
-        self:ClearHUDHelp()
-
-        if self:GetOwner() == swordTarget.player then
-            self:AddTTT2HUDHelp("sopd_instruction_for_target")
-            return
+        -- update name
+        if self.Packed then
+            local packVerb = self.DeleteVerb and "Delete" or "Def-Eat"
+            self.PrintName = string.gsub(curMetaSWEP.PrintName, "Defeat", packVerb)
+        else
+            self.PrintName = curMetaSWEP.PrintName
         end
 
-        if swordTarget.player then
-            if IsLivingPlayer(swordTarget.player) then
-                self:AddTTT2HUDHelp("sopd_instruction_targeted")
-            else
-                if RAGDOLL_STAB_COVERUP:GetBool() then
-                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
-                else
-                    self:AddTTT2HUDHelp("sopd_instruction_stab")
+        -- update tooltip instructions
+        self:ClearHUDHelp()
+
+        if not IsValid(self.PackVictim) then -- sword doesn't have valid disguise
+            if swordTarget.player then       -- sword is targeted
+                --(regular alive check may be wrong due to client/server sync delay)
+                local targetAlive = (swordTarget.ragdoll == nil)
+
+                if targetAlive or IsValid(swordTarget.ragdoll) then   -- target is interactable
+                    if not self.Packed then                            -- sword is not packed
+                        if targetAlive then                               -- target is alive
+                            if self:GetOwner() ~= swordTarget.player then    -- owner is not target
+                                self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
+
+                            else -- owner is target
+                                self:AddTTT2HUDHelp("sopd_instruction_for_target") -- "Defeat yourself"
+                            end
+
+                        else -- target is dead
+                            if RAGDOLL_STAB_COVERUP:GetBool() then
+                                -- "Stab target's corpse & destroy evidence"
+                                self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                            else
+                                -- "Stab target's corpse"
+                                self:AddTTT2HUDHelp("sopd_instruction_stab")
+                            end
+                        end
+
+                    else -- packed sword
+                        if self:GetOwner() ~= swordTarget.player then
+                            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
+                        else
+                            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_self") -- "Inhale yourself?"
+                        end
+                    end
+
+                else -- target can't be stabbed
+                    -- "Swing fruitlessly (your enemy has vanished)"
+                    self:AddTTT2HUDHelp("sopd_instruction_useless")
                 end
-                --TODO "cant do shit" instruction for if the corpse is gone
-                -- (can happen via flare gun or inhaling a disconnected player)
+
+            else -- targetless sword
+                if self.Packed then
+                    if self:CanStab() then
+                        self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
+                    else
+                        -- "Swing fruitlessly (out of ammo)" (will likely never be seen lol)
+                        self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_no_ammo")
+                    end
+                else
+                    self:AddTTT2HUDHelp("sopd_instruction_targetless") -- "Defeat any player"
+                end
             end
-        else
-            self:AddTTT2HUDHelp("sopd_instruction_targetless")
+
+        else -- packed sword with disguise
+            -- "Swing triumphantly" / "Toggle copy ability (disguise)"
+            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb2", "sopd_instruction_pap_rmb")
         end
     end
 

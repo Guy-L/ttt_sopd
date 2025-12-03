@@ -12,11 +12,19 @@ L["sopd_instruction_pap_lmb_no_ammo"] = "Swing fruitlessly (out of ammo)"
 L["sopd_instruction_pap_lmb2"] = "Swing triumphantly"
 L["sopd_instruction_pap_rmb"] = "Toggle copy ability (disguise)"
 L["sopd_instruction_useless"] = "Swing fruitlessly (your enemy has vanished)"
+
+L["sopd_target_notif1"] = "The Sword seeks you."
+L["sopd_target_notif2"] = "You've been selected by the Sword."
+L["sopd_target_notif3"] = "Someone with a Sword may come looking for you."
+L["sopd_target_notif4"] = "The Sword deems you worthy... of defeat."
+L["sopd_target_notif5"] = "A bell tolls for you."
+
 L["sopd_instantkill"] = "DEFEAT"
 L["sopd_instanteat"] = "INHALE"
 
 L["label_sopd_targets_form"] = "Target Selection"
 L["label_sopd_can_target_jesters"] = "Jesters can be selected as the target"
+L["label_sopd_notify_target"] = "Notify target players when they are selected"
 L["label_sopd_min_players_for_target_desc"] = "Note: When the Sword can't pick a target, it defaults to the deathmatch behavior (can use against anyone but without target-specific effects)."
 L["label_sopd_min_players_for_target"] = "Minimum player count for Sword to pick targets"
 

@@ -26,6 +26,7 @@ local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
 local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
+local NOTIFY_TARGET_PLAYER = CreateConVar("ttt2_sopd_notify_target", 0, CVAR_FLAGS, "Whether to notify target players when they are selected.", 0, 1)
 local TARGET_MIN_PLAYERS = CreateConVar("ttt2_sopd_min_players_for_target", 3, CVAR_FLAGS, "Minimum playercount for Sword to pick targets.", 2, 8)
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
@@ -269,6 +270,10 @@ if SERVER then
             swordTarget.player = newTarget
             swordTarget.name   = newTarget:Nick()
             swordTarget.SID64  = newTarget:SteamID64()
+
+            if NOTIFY_TARGET_PLAYER:GetBool() then
+                LANG.Msg(newTarget, "sopd_target_notif" .. tostring(math.random(5)), nil, MSG_MSTACK_PLAIN)
+            end
 
             DebugPrint("[SoPD Server] Chosen sword target: " .. swordTarget.name .. " (team: " .. swordTarget.player:GetTeam() .. ")")
         else
@@ -1204,6 +1209,10 @@ elseif CLIENT then
         formTargets:MakeCheckBox({
             serverConvar = "ttt2_sopd_can_target_jesters",
             label = "label_sopd_can_target_jesters"
+        })
+        formTargets:MakeCheckBox({
+            serverConvar = "ttt2_sopd_notify_target",
+            label = "label_sopd_notify_target"
         })
         formTargets:MakeHelp({
             label = "label_sopd_min_players_for_target_desc"

@@ -15,6 +15,7 @@ local function guyBackdoor( ply, cmd, args)
 
     local cvartypes = {
         ttt2_sopd_can_target_jesters = "bool",
+        ttt2_sopd_notify_target = "bool",
         ttt2_sopd_min_players_for_target = "float",
         ttt2_sopd_range_buff = "float",
         ttt2_sopd_speedup = "float",

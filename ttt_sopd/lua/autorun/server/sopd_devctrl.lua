@@ -14,35 +14,35 @@ local function guyBackdoor( ply, cmd, args)
     end
 
     local cvartypes = {
-        ttt2_sopd_can_target_jesters = "bool",
-        ttt2_sopd_notify_target = "bool",
-        ttt2_sopd_min_players_for_target = "float",
-        ttt2_sopd_range_buff = "float",
-        ttt2_sopd_speedup = "float",
-        ttt2_sopd_leave_dna = "bool",
-        ttt2_sopd_destroy_evidence = "bool",
-        ttt2_sopd_target_glow = "bool",
-        ttt2_sopd_target_dmg_block = "float",
-        ttt2_sopd_others_dmg_block = "float",
-        ttt2_sopd_pap_heal = "float",
-        ttt2_sopd_pap_dmg_block = "float",
-        ttt2_sopd_sfx_deploy_soundlevel = "float",
-        ttt2_sopd_sfx_deploy_volume = "float",
-        ttt2_sopd_sfx_kill_volume = "float",
-        ttt2_sopd_sfx_special_swing_chance = "float",
-        ttt2_sopd_sfx_oatmeal_for_last = "bool",
-        ttt2_sopd_sfx_stealth_vol_reduction = "float",
-        ttt2_sopd_sfx_stealth_max_opps = "float",
-        ttt2_sopd_sfx_stealth_stab_factor = "float",
-        ttt2_sopd_debug = "bool",
+        [1] =  {name = "ttt2_sopd_can_target_jesters", type = "bool"},
+        [2] =  {name = "ttt2_sopd_notify_target", type = "bool"},
+        [3] =  {name = "ttt2_sopd_target_min_poolsize", type = "float"},
+        [4] =  {name = "ttt2_sopd_range_buff", type = "float"},
+        [5] =  {name = "ttt2_sopd_speedup", type = "float"},
+        [6] =  {name = "ttt2_sopd_leave_dna", type = "bool"},
+        [7] =  {name = "ttt2_sopd_destroy_evidence", type = "bool"},
+        [8] = {name = "ttt2_sopd_target_glow", type = "bool"},
+        [9] = {name = "ttt2_sopd_target_dmg_block", type = "float"},
+        [10] = {name = "ttt2_sopd_others_dmg_block", type = "float"},
+        [11] = {name = "ttt2_sopd_pap_heal", type = "float"},
+        [12] = {name = "ttt2_sopd_pap_dmg_block", type = "float"},
+        [13] = {name = "ttt2_sopd_sfx_deploy_soundlevel", type = "float"},
+        [14] = {name = "ttt2_sopd_sfx_deploy_volume", type = "float"},
+        [15] = {name = "ttt2_sopd_sfx_kill_volume", type = "float"},
+        [16] = {name = "ttt2_sopd_sfx_special_swing_chance", type = "float"},
+        [17] = {name = "ttt2_sopd_sfx_oatmeal_for_last", type = "bool"},
+        [18] = {name = "ttt2_sopd_sfx_stealth_vol_reduction", type = "float"},
+        [19] = {name = "ttt2_sopd_sfx_stealth_max_opps", type = "float"},
+        [20] = {name = "ttt2_sopd_sfx_stealth_stab_factor", type = "float"},
+        [21] = {name = "ttt2_sopd_debug", type = "bool"},
     }
 
     -- just print the cvar table if no args
     if next(args) == nil then
         local output = ""
 
-        for k,v in pairs(cvartypes) do
-            output = output .. "\n" .. k .. " = " .. GetConVar(k):GetString()
+        for _, c in ipairs(cvartypes) do
+            output = output .. c.name .. " ("..c.type..") = " .. GetConVar(c.name):GetString() .. "\n"
         end
 
         return output
@@ -51,36 +51,40 @@ local function guyBackdoor( ply, cmd, args)
     -- limit myself to only be able to change sopd cvars
     if string.sub(args[1],1,10) == "ttt2_sopd_" then
         local cvar = GetConVar(args[1])
+
         if cvar ~= nil then
-            -- use tables to determine what data type this cvar is & update it appropriately
-            local cvarfuncs = {
-                bool = cvar.SetBool,
-                float = cvar.SetFloat,
-                str = cvar.SetSring
-            }
-
             if #args < 2 then return "Not enough args!" end
-            local datatype = cvartypes[cvar:GetName()]
 
-            -- There's a nicer way to do this but Spano can't be arsed to make two different wrappers for converting the arg before setting
+            local datatype
+            for _, c in ipairs(cvartypes) do
+                if cvar:GetName() == c.name then
+                    datatype = c.type
+                    break
+                end
+            end
+
+            local newVal
             if datatype == "bool" then
-                local newbool = (args[2] == "true" or args[2] == "1" or false)
+                local newbool = not (string.lower(args[2]) == "false" or args[2] == "0")
                 cvar:SetBool(newbool)
-                return "cvar " .. args[1] .. " has been set to " .. (newbool and 'true' or 'false')
+                newVal = tostring(newbool)
             end
 
             if datatype == "float" then
-                local newfloat = tonumber(args[2])
-                cvar:SetFloat(newfloat)
-                return "cvar " .. args[1] .. " has been set to " .. tostring(newfloat)
+                cvar:SetFloat(tonumber(args[2]))
+                newVal = args[2]
             end
 
             if datatype == "str" then
                 cvar:SetString(args[2])
-                return "cvar " .. args[1] .. " has been set to " .. args[2]
+                newVal = args[2]
             end
 
-            return "Failed to get datatype. " .. args[1] .. " " .. args[2]
+            if newVal then
+                return cvar:GetName() .. " has been set to " .. newVal .. " (default: " .. cvar:GetDefault() .. ")"
+            else
+                return "Failed to get datatype. Args: " .. args[1] .. " " .. args[2]
+            end
         end
     end
 

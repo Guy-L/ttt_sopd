@@ -27,7 +27,7 @@ local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
 local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
 local NOTIFY_TARGET_PLAYER = CreateConVar("ttt2_sopd_notify_target", 0, CVAR_FLAGS, "Whether to notify target players when they are selected.", 0, 1)
-local TARGET_MIN_PLAYERS = CreateConVar("ttt2_sopd_min_players_for_target", 3, CVAR_FLAGS, "Minimum playercount for Sword to pick targets.", 2, 8)
+local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVAR_FLAGS, "Minimum possible target pool size for the Sword to be allowed to pick one.", 1, 6)
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
@@ -92,7 +92,7 @@ function CanBeStabbed(ply)
 end
 
 function HoldsSword(ply, swordNeedsAmmo)
-    if IsPlayer(ply) then
+    if IsLivingPlayer(ply) then
         local wep = ply:GetActiveWeapon()
 
         return IsValid(wep) and wep:GetClass() == CLASS_NAME and (not swordNeedsAmmo or wep:HasSwordAmmo())
@@ -215,23 +215,19 @@ if SERVER then
 
     function GetPossibleTargetPool()
         local possibleTargetPool = {}
-        local livingPlayerCnt = 0
 
         for _, ply in ipairs(player.GetAll()) do
-            if IsLivingPlayer(ply) then
-                livingPlayerCnt = livingPlayerCnt + 1
+            if ply:GetRole() != ROLE_NONE --spectator mode
+              and ply:GetTeam() ~= TEAM_TRAITOR
+              and ply:GetTeam() ~= TEAM_JACKAL
+              and ply:GetTeam() ~= TEAM_INFECTED
+              and (ply:GetTeam() ~= TEAM_JESTER or CAN_TARGET_JESTERS:GetBool()) then
 
-                if ply:GetTeam() ~= TEAM_TRAITOR
-                    and ply:GetTeam() ~= TEAM_JACKAL
-                    and ply:GetTeam() ~= TEAM_INFECTED
-                    and (CAN_TARGET_JESTERS:GetBool() or ply:GetRole() ~= TEAM_JESTER) then
-
-                    table.insert(possibleTargetPool, ply)
-                end
+                table.insert(possibleTargetPool, ply)
             end
         end
 
-        return possibleTargetPool, livingPlayerCnt
+        return possibleTargetPool
     end
 
     function SendTargetData(to, isPlayerChange)
@@ -252,13 +248,13 @@ if SERVER then
     end
 
     function DrawTarget()
-        local possibleTargetPool, playerCnt = GetPossibleTargetPool()
+        local possibleTargetPool = GetPossibleTargetPool()
         swordTarget.ragdoll = nil
 
         -- Select target player
-        DebugPrint("[SoPD Server] Possible targets: "..tostring(#possibleTargetPool).."; player count: "..tostring(playerCnt))
+        DebugPrint("[SoPD Server] Drawing target; possible target pool size: "..tostring(#possibleTargetPool))
 
-        if #possibleTargetPool > 0 and playerCnt >= TARGET_MIN_PLAYERS:GetInt() then
+        if #possibleTargetPool >= TARGET_MIN_POOLSIZE:GetInt() then
             newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
 
             --retry once to make it less likely to pick the same target twice
@@ -510,7 +506,7 @@ elseif CLIENT then
     end)
 
     function InPlayerStabRange(ply)
-        if not (IsPlayer(ply)) then return false end
+        if not (IsLivingPlayer(ply)) then return false end
         local tr = ply:GetEyeTrace(MASK_SHOT)
         if not (tr.HitNonWorld and IsValid(tr.Entity)) then return false end
 
@@ -1215,12 +1211,12 @@ elseif CLIENT then
             label = "label_sopd_notify_target"
         })
         formTargets:MakeHelp({
-            label = "label_sopd_min_players_for_target_desc"
+            label = "label_sopd_target_min_poolsize_desc"
         })
         formTargets:MakeSlider({
-            serverConvar = "ttt2_sopd_min_players_for_target",
-            label = "label_sopd_min_players_for_target",
-            min = 2, max = 8, decimal = 0
+            serverConvar = "ttt2_sopd_target_min_poolsize",
+            label = "label_sopd_target_min_poolsize",
+            min = 1, max = 6, decimal = 0
         })
 
         local formSword = vgui.CreateTTT2Form(parent, "label_sopd_sword_form")

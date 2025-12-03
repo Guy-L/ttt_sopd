@@ -28,6 +28,7 @@ local function guyBackdoor( ply, cmd, args)
         ttt2_sopd_sfx_deploy_soundlevel = "float",
         ttt2_sopd_sfx_deploy_volume = "float",
         ttt2_sopd_sfx_kill_volume = "float",
+        ttt2_sopd_sfx_special_swing_chance = "float",
         ttt2_sopd_sfx_oatmeal_for_last = "bool",
         ttt2_sopd_sfx_stealth_vol_reduction = "float",
         ttt2_sopd_sfx_stealth_max_opps = "float",

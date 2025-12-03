@@ -42,6 +42,7 @@ L["label_sopd_sfx_deploy_soundlevel"] = "Sword deploy song audible range (dB)"
 L["label_sopd_sfx_volume_desc"] = "Base volume for both sound effect types before any stealth-related reductions."
 L["label_sopd_sfx_deploy_volume"] = "Base Sword deploy song volume (%)"
 L["label_sopd_sfx_kill_volume"] = "Base Sword kill sound volume (%)"
+L["label_sopd_sfx_special_swing_chance"] = "Chance for special sound effect when swinging Sword in the air (%)"
 L["label_sopd_sfx_oatmeal_for_last"] = "Sword plays \"1, 2, Oatmeal\" when deployed with only one opponent left"
 L["label_sopd_sfx_stealth_desc"] = [[
 Stealth: If there are n or more opponents (inno/side team members) left alive, the Sword's sound effect volumes are reduced by v. For less than n opponents, this effect gets proportionally weaker, going away completely at 1 opponent left.

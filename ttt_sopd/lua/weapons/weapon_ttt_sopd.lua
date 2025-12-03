@@ -43,6 +43,7 @@ PAP_DMG_BLOCK = CreateConVar("ttt2_sopd_pap_dmg_block", 0, CVAR_FLAGS, "Percent 
 local DEPLOY_SND_SOUNDLEVEL = CreateConVar("ttt2_sopd_sfx_deploy_soundlevel", 100, CVAR_FLAGS, "The Sword deploy song's soundlevel (how far it can be heard).", 0, 300)
 local DEPLOY_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_deploy_volume", 100, CVAR_FLAGS, "The Sword deploy song's volume, before any reductions.", 0, 100)
 local KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any reductions.", 0, 100)
+local SPECIAL_SWING_CHANCE = CreateConVar("ttt2_sopd_sfx_special_swing_chance", 10, CVAR_FLAGS, "Chance for a special sound to play when swinging Sword in the air", 0, 100)
 local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 local STEALTH_VOL_REDUCTION = CreateConVar("ttt2_sopd_sfx_stealth_vol_reduction", 50, CVAR_FLAGS, "The volume of Sword sounds is reduced by this factor when many opponents (inno/side teams) are alive.", 0, 100)
 local STEALTH_MAX_OPPS = CreateConVar("ttt2_sopd_sfx_stealth_max_opps", 10, CVAR_FLAGS, "The stealth volume reduction on Sword sound effects is fully applied when this many opponents (inno/side teams) or more are alive, then goes down linearly with the number of remaining opponents (to zero effect when only one opponent left).", 2, 24)
@@ -54,7 +55,12 @@ local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debu
 ---------- SHARED STATE ----------
 ----------------------------------
 sounds = {
-    swing         = Sound("Weapon_Crowbar.Single"),
+    swing_base    = Sound("Weapon_Crowbar.Single"),
+    swing1        = Sound("sopd/sopd_swing1.mp3"),
+    swing2        = Sound("sopd/sopd_swing2.mp3"),
+    swing3        = Sound("sopd/sopd_swing3.mp3"),
+    swing_spc1    = Sound("sopd/sopd_swing_special1.mp3"),
+    swing_spc2    = Sound("sopd/sopd_swing_special2.mp3"),
     triumph_best  = Sound("sopd/sopd_triumph_best.mp3"),
     triumph_nobgm = Sound("sopd/sopd_triumph_nobgm.mp3"),
     triumph_other = Sound("sopd/sopd_triumph_other.mp3"),
@@ -763,7 +769,7 @@ end
 
 function SWEP:PrimaryAttack()
     self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
-    self:EmitSound(sounds["swing"])
+    self:EmitSound(sounds["swing" .. tostring(math.random(3))], 75, math.random(90, 110))
 
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
@@ -805,6 +811,9 @@ function SWEP:PrimaryAttack()
         end
     else
         self:SendWeaponAnim(ACT_VM_MISSCENTER)
+        if math.random() < (SPECIAL_SWING_CHANCE:GetFloat() / 100) then
+            self:EmitSound(sounds["swing_spc" .. tostring(math.random(2))], 75, math.random(95, 105))
+        end
     end
 
     if SERVER then
@@ -1280,6 +1289,11 @@ elseif CLIENT then
         formSFX:MakeSlider({
             serverConvar = "ttt2_sopd_sfx_kill_volume",
             label = "label_sopd_sfx_kill_volume",
+            min = 0, max = 100, decimal = 0
+        })
+        formSFX:MakeSlider({
+            serverConvar = "ttt2_sopd_sfx_special_swing_chance",
+            label = "label_sopd_sfx_special_swing_chance",
             min = 0, max = 100, decimal = 0
         })
         formSFX:MakeCheckBox({

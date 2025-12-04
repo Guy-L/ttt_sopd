@@ -1058,8 +1058,19 @@ if SERVER then
         if IsValid(phys) then phys:EnableCollisions(true) end
         constraint.Weld(rag, stuckSword, bone or 0, 0, 0, true)
 
-        -- need to close over sword in order to keep a valid ref to it
-        rag:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+        -- note: sword can't be deleted as it would interfere with the "swords were used"
+        --       check on target disconnect. yes that could be reworked I agree.
+        --[[rag:CallOnRemove("ttt_sword_cleanup", function()
+            SafeRemoveEntity(stuckSword)
+        end)]]
+
+        -- note: this approach doesn't quite work either because the Sword falling in the void
+        --       is eventually deleted by the server (and not teleporting it allows regrab/moving
+        --       it with magneto stick). so let's just let it drop normally
+        --[[rag:CallOnRemove("ttt_sword_cleanup", function()
+            --stuckSword:SetRenderMode(RENDERMODE_NONE) -- invisible
+            --stuckSword:SetPos(Vector(0, 0, -5000)) -- in the backrooms
+        end)]]
 
         return stuckSword
     end

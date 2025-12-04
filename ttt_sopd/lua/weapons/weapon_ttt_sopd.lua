@@ -6,6 +6,7 @@ local CLASS_NAME   = "weapon_ttt_sopd"
 local DEFAULT_NAME = "Sword of Player Defeat"
 local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
 local SWORD_WORLDMODEL = "models/ttt/sopd/w_sopd.mdl"
+local SWORD_ICON       = "vgui/ttt/icon_sopd"
 
 local SWORD_TARGET_MSG = "TTT_SoPD_SwordTargetMsg"
 local SWORD_KILLED_MSG = "TTT_SoPD_SwordKilledMsg"
@@ -25,6 +26,7 @@ local HOOK_TARGET_REMOVED    = "TTT_SoPD_TargetRemoved"
 local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
 local HOOK_SWORD_UNSTICK     = "TTT_SoPD_PickUpStuckSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
+local HOOK_DRAW_SHOP         = "TTT_SoPD_DrawShopIcon"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
 local TARGET_DISCONNECT_MODE = CreateConVar("ttt2_sopd_target_disconnect_mode", 2, CVAR_FLAGS, "Behavior when the target player disconnects midround (0 = do nothing, 1 = pick new target, 3 = make sword targetless, 2/4 = same as 1/3 but does not trigger if the Sword had been used on the target).", 0, 4)
@@ -496,7 +498,7 @@ elseif CLIENT then
     curMetaSWEP = SWEP --meta instance made at initialization
     -- (may not point to the same object when debugging / hot-reloading)
 
-    curMetaSWEP.Icon = "vgui/ttt/icon_sopd"
+    curMetaSWEP.Icon = SWORD_ICON
     curMetaSWEP.PrintName = DEFAULT_NAME
     curMetaSWEP.Author = "Guy"
     curMetaSWEP.Instructions = LANG.TryTranslation("sopd_instruction")
@@ -683,6 +685,54 @@ elseif CLIENT then
 
             DebugPrint("[SoPD SFX] Playing on-kill triumph sound", choice)
             swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_BODY)
+        end
+    end)
+
+    -- update sword's shop Icon (inspired by PaP code)
+    -- note: may be the better way to update shop meta?
+    hook.Add("TTTEquipmentTabs", HOOK_DRAW_SHOP, function(dsheet)
+        if not IsSwordTargeted() then return end
+        local buyMenu
+
+        for _, tab in ipairs(dsheet:GetItems()) do
+            if tab.Name == "Order Equipment" then
+                buyMenu = tab.Panel
+                break
+            end
+        end
+
+        if buyMenu then
+            buyMenu = buyMenu:GetChildren()
+
+            -- extracting buy menu collection from equipment tab
+            for _, childIndex in ipairs(CR_VERSION and {2, 1} or {1, 1}) do
+                if not buyMenu or table.IsEmpty(buyMenu) then return end
+                buyMenu = buyMenu[childIndex]
+                if not buyMenu then return end
+                buyMenu = buyMenu:GetChildren()
+            end
+
+            -- finding the sword's entry to update
+            if buyMenu and not table.IsEmpty(buyMenu) then
+                for _, panel in ipairs(buyMenu) do
+                    if panel.item and panel.item.id == CLASS_NAME then
+                        tgtIcon = vgui.Create("DImage")
+
+                        -- setup pfp icon
+                        tgtIcon:SetMaterial(draw.GetAvatarMaterial(swordTarget.SID64, "small"))
+                        tgtIcon:SetTooltip(swordTarget.name)
+                        tgtIcon:SetImageColor(panel.Icon:GetImageColor())
+                        tgtIcon.PerformLayout = function(s)
+                            s:AlignBottom(4); s:AlignRight(4); s:SetSize(16, 16)
+                        end
+
+                        -- add pfp layer
+                        panel:AddLayer(tgtIcon)
+                        panel:EnableMousePassthrough(tgtIcon)
+                        return
+                    end
+                end
+            end
         end
     end)
 

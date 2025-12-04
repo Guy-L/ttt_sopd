@@ -88,6 +88,15 @@ function UPGRADE:Apply(SWEP)
         SWEP:SetPacked(true) --cf. note in SetupDataTables
         SWEP:SetPackVerb(math.random() > 0.5)
 
+        -- carry over relevant vars
+        if self.StabbedTarget ~= nil then
+            SWEP:SetStabbedTarget(self.StabbedTarget)
+            SWEP:SetGrabbedFromCorpse(self.GrabbedFromCorpse)
+
+            self.StabbedTarget = nil
+            self.GrabbedFromCorpse = nil
+        end
+
         -- API method for this doesn't appear to work lol
         local function GetRagdollOwner(rag)
             for _, ply in ipairs(player.GetAll()) do
@@ -150,6 +159,18 @@ function UPGRADE:Apply(SWEP)
             end
         end
     end
+end
+
+-- jank to smuggle networked vars during the upgrade
+function UPGRADE:Condition(SWEP)
+    if SERVER then
+        if UPGRADE.StabbedTarget == nil then
+            UPGRADE.StabbedTarget     = SWEP:GetStabbedTarget()
+            UPGRADE.GrabbedFromCorpse = SWEP:GetGrabbedFromCorpse()
+        end
+    end
+
+    return true
 end
 
 TTTPAP:Register(UPGRADE)

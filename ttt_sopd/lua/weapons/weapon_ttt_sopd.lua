@@ -39,7 +39,7 @@ local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVA
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
-local LEAVE_DNA = CreateConVar("ttt2_sopd_leave_dna", 0, CVAR_FLAGS, "Whether stabbing with the Sword leaves DNA.", 0, 1)
+local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Value subtracted from victim's DNA timer on kill or corpse stab.", 0, 120)
 local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
 local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage)", 0, 100)
@@ -456,7 +456,7 @@ if SERVER then
         net.Broadcast()
     end
 
-    local descCvars = {HOLDER_SPEEDUP, TARGET_DMG_BLOCK, OTHERS_DMG_BLOCK, RANGE_BUFF, RAGDOLL_STAB_COVERUP, LEAVE_DNA, ENABLE_TARGET_GLOW}
+    local descCvars = {HOLDER_SPEEDUP, TARGET_DMG_BLOCK, OTHERS_DMG_BLOCK, RANGE_BUFF, RAGDOLL_STAB_COVERUP, DNA_DESTRUCTION, ENABLE_TARGET_GLOW}
     for _, cvar in ipairs(descCvars) do
         cvars.RemoveChangeCallback(cvar:GetName(), cvar:GetName())
         cvars.AddChangeCallback(cvar:GetName(), descVarChange, cvar:GetName())
@@ -712,6 +712,7 @@ elseif CLIENT then
         end
 
         desc = desc .. "While held:\n"
+
         if HOLDER_SPEEDUP:GetFloat() > 1 then
             local speedStr = string.format("%.1f", HOLDER_SPEEDUP:GetFloat()):gsub("%.0$", "")
             desc = desc .. "• ".. speedStr .. "x speed multiplier\n"
@@ -719,10 +720,12 @@ elseif CLIENT then
         if IsSwordTargeted() and ENABLE_TARGET_GLOW:GetBool() then
             desc = desc .. "• Can see " .. swordTarget.name .. "'s outline through walls\n"
         end
+
         if IsSwordTargeted() and TARGET_DMG_BLOCK:GetFloat() > 0 then
             local tgtBlockStr = string.format("%.0f", TARGET_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. tgtBlockStr .. "% of damage from " .. swordTarget.name .. "\n"
         end
+
         if OTHERS_DMG_BLOCK:GetFloat() > 0 then
             local allBlockStr = string.format("%.0f", OTHERS_DMG_BLOCK:GetFloat())
             desc = desc .. "• Block " .. allBlockStr .. "% of "
@@ -737,15 +740,28 @@ elseif CLIENT then
             end
         end
         desc = desc .. "• You are very noticeable\n"
-        if LEAVE_DNA:GetBool() then
-            desc = desc .. "Leaves DNA. "
-        else
+
+        local dnaDestruction = DNA_DESTRUCTION:GetFloat()
+        if dnaDestruction >= 100 then
             desc = desc .. "Leaves no DNA. "
+        elseif dnaDestruction >= 70 then
+            desc = desc .. "Doesn't leave much DNA. "
+        elseif dnaDestruction > 0 then
+            desc = desc .. "Leaves reduced DNA. "
+        else
+            desc = desc .. "Leaves DNA. "
         end
+
         if IsSwordTargeted() and RAGDOLL_STAB_COVERUP:GetBool() then
-            desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to destroy evidence"
-            if not LEAVE_DNA:GetBool() then
-                desc = desc .. " and remove DNA"
+            desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to falsify"
+            if dnaDestruction >= 100 then
+                desc = desc .. " evidence and destroy DNA"
+            elseif dnaDestruction >= 70 then
+                desc = desc .. " evidence and remove DNA"
+            elseif dnaDestruction > 0 then
+                desc = desc .. " evidence and reduce DNA"
+            else
+                desc = desc .. " other evidence"
             end
             desc = desc .. ".\n"
         end
@@ -856,7 +872,7 @@ function SWEP:PrimaryAttack()
 
     -- raycast to get entity hit by sword, ignoring owner & other swords
     local function SwordTraceFilter(ent)
-        return ent:GetModel() != SWORD_WORLDMODEL and (ent != owner or owner == swordTarget.player)
+        return ent:GetModel() ~= SWORD_WORLDMODEL and (ent ~= owner or owner == swordTarget.player)
     end
 
     local tr = util.TraceHull({start=spos, endpos=sdest, filter=SwordTraceFilter, mask=MASK_SHOT_HULL, mins=kmins, maxs=kmaxs})
@@ -908,7 +924,7 @@ function SWEP:PrimaryAttack()
 
         if preReqs then
             local CAN_STAB_ENT     = CanBeStabbed(hitEnt)
-            local OWNER_NOT_JESTER = owner:GetTeam() != TEAM_JESTER
+            local OWNER_NOT_JESTER = owner:GetTeam() ~= TEAM_JESTER
             local isKill = CAN_STAB_ENT and OWNER_NOT_JESTER
 
             DebugPrint("• KILL - "          .. tostring(isKill)
@@ -999,10 +1015,16 @@ if SERVER then
         return retr.HitPos + (ang:Forward() * 10)
     end
 
+    local function adjDNATimer(rag)
+        if rag.killer_sample then
+            rag.killer_sample.t = rag.killer_sample.t - DNA_DESTRUCTION:GetFloat()
+        end
+    end
+
     function SWEP:StabKill(tr, spos, sdest)
         --arg2/3 = shooting origin/dest world positions
         local target = tr.Entity
-        local owner = self:GetOwner()
+        local owner  = self:GetOwner()
 
         --wish I knew how to make this not ugly (TODO?)
         local packEffect = self.PackEffect
@@ -1011,9 +1033,7 @@ if SERVER then
         -- damage to killma player
         local dmg = DamageInfo()
         dmg:SetDamage(12047)
-        if LEAVE_DNA:GetBool() or target:GetTeam() == TEAM_JESTER then
-            dmg:SetAttacker(owner)
-        end
+        dmg:SetAttacker(owner)
         dmg:SetInflictor(self)
         dmg:SetDamageForce(owner:GetAimVector())
         dmg:SetDamagePosition(owner:GetPos())
@@ -1021,7 +1041,7 @@ if SERVER then
 
         -- raycast to get entity hit by sword (which should be a player's limb)
         local retr = util.TraceLine({start=spos, endpos=sdest, filter=owner, mask=MASK_SHOT_HULL})
-        if retr.Entity != target then
+        if retr.Entity ~= target then
             local center = target:LocalToWorld(target:OBBCenter())
             retr = util.TraceLine({start=spos, endpos=center, filter=owner, mask=MASK_SHOT_HULL})
         end
@@ -1036,6 +1056,8 @@ if SERVER then
             local stuckSword
 
             if not packEffect then
+                adjDNATimer(rag)
+
                 -- redo raycast from previously hit point (we might find a better location)
                 local rtr = util.TraceLine({start=pos, endpos=pos + norm * 40, filter=owner, mask=MASK_SHOT_HULL})
 
@@ -1045,6 +1067,7 @@ if SERVER then
                     pos = adjStuckSwordPos(rtr, ang)
                 end
 
+                -- create & attach stuck sword
                 stuckSword = ents.Create("prop_physics")
                 stuckSword:SetModel(SWORD_WORLDMODEL)
                 stuckSword:SetPos(pos)
@@ -1083,6 +1106,7 @@ if SERVER then
             local pos = adjStuckSwordPos(tr, ang)
             local stabVol = 0.2
 
+            -- create & attach stuck sword
             local stuckSword = ents.Create("prop_physics")
             stuckSword:SetModel(SWORD_WORLDMODEL)
             stuckSword:SetPos(pos)
@@ -1099,7 +1123,7 @@ if SERVER then
 
             -- concealing death cause here if enabled
             if RAGDOLL_STAB_COVERUP:GetBool() then
-                --gameplay relevant mechanic should have SOME risk
+                -- gameplay relevant mechanic should have SOME risk
                 stabVol = math.max(stabVol, AdjustVolume(true))
 
                 hitRagdoll.was_headshot = false
@@ -1108,7 +1132,7 @@ if SERVER then
                 hitRagdoll.scene.lastDamage = 12047
                 hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
                 hitRagdoll.scene.waterLevel = 0
-                if not LEAVE_DNA:GetBool() then hitRagdoll.killer_sample = nil end
+                adjDNATimer(hitRagdoll)
             end
 
             local stabSnd = "rag_stab1"
@@ -1129,7 +1153,7 @@ if SERVER then
         end
 
         if self:GetPacked() then
-            if self.Primary.ClipSize != -1 then
+            if self.Primary.ClipSize ~= -1 then
                 self:SetClip1(0)
             end
 
@@ -1213,54 +1237,60 @@ elseif CLIENT then
 
         -- update tooltip instructions
         self:ClearHUDHelp()
+        local owner = self:GetOwner()
 
-        if not IsValid(self:GetPackVictim()) then -- sword doesn't have valid disguise
-            if self:HasSwordAmmo() then           -- sword has ammo
-                if IsSwordTargeted() then         -- sword is targeted
-                    if targetAlive or IsValid(swordTarget.ragdoll) then    -- target is interactable
-                        if not isPacked then                                -- sword is not packed
-                            if targetAlive then                               -- target is alive
-                                if self:GetOwner() ~= swordTarget.player then    -- owner is not target
-                                    self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
+        if not IsValid(self:GetPackVictim()) then  -- sword doesn't have valid disguise
+            if owner:GetTeam() ~= TEAM_JESTER then -- owner is not jester
+                if self:HasSwordAmmo() then        -- sword has ammo
+                    if IsSwordTargeted() then      -- sword is targeted
+                        if targetAlive or IsValid(swordTarget.ragdoll) then -- target is interactable
+                            if not isPacked then                            -- sword is not packed
+                                if targetAlive then                         -- target is alive
+                                    if owner ~= swordTarget.player then     -- owner is not target
+                                        self:AddTTT2HUDHelp("sopd_instruction_targeted") -- "Defeat target"
 
-                                else -- owner is target
-                                    self:AddTTT2HUDHelp("sopd_instruction_for_target") -- "Defeat yourself"
+                                    else -- owner is target
+                                        self:AddTTT2HUDHelp("sopd_instruction_for_target") -- "Defeat yourself"
+                                    end
+
+                                else -- target is dead
+                                    if RAGDOLL_STAB_COVERUP:GetBool() then
+                                        -- "Stab target's corpse & destroy evidence"
+                                        self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                                    else
+                                        -- "Stab target's corpse"
+                                        self:AddTTT2HUDHelp("sopd_instruction_stab")
+                                    end
                                 end
 
-                            else -- target is dead
-                                if RAGDOLL_STAB_COVERUP:GetBool() then
-                                    -- "Stab target's corpse & destroy evidence"
-                                    self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
+                            else -- packed sword
+                                if owner ~= swordTarget.player then
+                                    self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
                                 else
-                                    -- "Stab target's corpse"
-                                    self:AddTTT2HUDHelp("sopd_instruction_stab")
+                                    self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_self") -- "Inhale yourself?"
                                 end
                             end
 
-                        else -- packed sword
-                            if self:GetOwner() ~= swordTarget.player then
-                                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
-                            else
-                                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_self") -- "Inhale yourself?"
-                            end
+                        else -- target can't be stabbed
+                            -- "Swing fruitlessly (your enemy has vanished)"
+                            self:AddTTT2HUDHelp("sopd_instruction_useless")
                         end
 
-                    else -- target can't be stabbed
-                        -- "Swing fruitlessly (your enemy has vanished)"
-                        self:AddTTT2HUDHelp("sopd_instruction_useless")
+                    else -- targetless sword
+                        if isPacked then
+                            self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
+                        else
+                            self:AddTTT2HUDHelp("sopd_instruction_targetless") -- "Defeat any player"
+                        end
                     end
 
-                else -- targetless sword
-                    if isPacked then
-                        self:AddTTT2HUDHelp("sopd_instruction_pap_lmb") -- "Inhale enemy"
-                    else
-                        self:AddTTT2HUDHelp("sopd_instruction_targetless") -- "Defeat any player"
-                    end
+                else -- packed sword without disguise or ammo (quite rare)
+                    -- "Swing fruitlessly (out of ammo)"
+                    self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_no_ammo")
                 end
 
-            else -- packed sword without disguise or ammo (quite rare)
-                -- "Swing fruitlessly (out of ammo)"
-                self:AddTTT2HUDHelp("sopd_instruction_pap_lmb_no_ammo")
+            else -- owner is jester
+                self:AddTTT2HUDHelp("sopd_instruction_for_jester") -- "Pretend to swing"
             end
 
         else -- packed sword with disguise
@@ -1329,9 +1359,10 @@ elseif CLIENT then
             label = "label_sopd_speedup",
             min = 1, max = 5, decimal = 1
         })
-        formSword:MakeCheckBox({
-            serverConvar = "ttt2_sopd_leave_dna",
-            label = "label_sopd_leave_dna"
+        formSword:MakeSlider({
+            serverConvar = "ttt2_sopd_dna_destruction",
+            label = "label_sopd_dna_destruction",
+            min = 0, max = 120, decimal = 0
         })
         formSword:MakeCheckBox({
             serverConvar = "ttt2_sopd_destroy_evidence",

@@ -21,7 +21,7 @@ local function DevBackdoor(ply, cmd, args)
         [5]  = {name = "ttt2_sopd_target_min_poolsize", type = "float"},
         [6]  = {name = "ttt2_sopd_range_buff", type = "float"},
         [7]  = {name = "ttt2_sopd_speedup", type = "float"},
-        [8]  = {name = "ttt2_sopd_leave_dna", type = "bool"},
+        [8]  = {name = "ttt2_sopd_dna_destruction", type = "float"},
         [9]  = {name = "ttt2_sopd_destroy_evidence", type = "bool"},
         [10] = {name = "ttt2_sopd_target_glow", type = "bool"},
         [11] = {name = "ttt2_sopd_target_dmg_block", type = "float"},

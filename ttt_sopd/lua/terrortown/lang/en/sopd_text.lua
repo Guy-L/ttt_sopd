@@ -43,11 +43,13 @@ L["label_sopd_target_min_poolsize_desc"] = "If the number of possible targets is
 L["label_sopd_target_min_poolsize"] = "Minimum pool size for Sword to pick targets"
 
 L["label_sopd_sword_form"] = "Sword Properties"
-L["label_sopd_range_buff_desc"] = "Multiplier of the base TTT2 knife's range (1 = same range as knife)."
+L["label_sopd_range_buff_desc"] = "Multiplier of the base TTT2 knife's range (1 = same range as knife)"
 L["label_sopd_range_buff"] = "Sword range buff"
 L["label_sopd_speedup"] = "Speed multiplier while holding Sword"
+L["label_sopd_dna_destruction_desc"] = "Note that Swords grabbed from bodies cannot further remove DNA time."
 L["label_sopd_dna_destruction"] = "Time removed from DNA sample on stab"
 L["label_sopd_destroy_evidence"] = "Stabbing the target's ragdoll covers up their true death cause (reducing DNA as described above)"
+L["label_sopd_grab_stuck_swords"] = "Swords stuck in bodies can be grabbed again"
 L["label_sopd_target_glow"] = "Target glows through walls while holding Sword"
 L["label_sopd_dmg_block_desc"] = "For the below two: 100% = fully block damage from player(s), 0% = no block. Affects shop description."
 L["label_sopd_target_dmg_block"] = "Damage resist. from target player while holding Sword (%)"
@@ -64,7 +66,7 @@ L["label_sopd_sfx_deploy_soundlevel"] = "Sword deploy song audible range (dB)"
 L["label_sopd_sfx_volume_desc"] = "Base volume for both sound effect types before any stealth-related reductions."
 L["label_sopd_sfx_deploy_volume"] = "Base Sword deploy song volume (%)"
 L["label_sopd_sfx_kill_volume"] = "Base Sword kill sound volume (%)"
-L["label_sopd_sfx_special_swing_chance"] = "Chance for special sound effect when swinging Sword in the air (%)"
+L["label_sopd_sfx_special_swing_chance"] = "Chance for special SFX when swinging Sword in the air (%)"
 L["label_sopd_sfx_oatmeal_for_last"] = "Sword plays \"1, 2, Oatmeal\" when deployed with only one opponent left"
 L["label_sopd_sfx_stealth_desc"] = [[
 Stealth: If there are n or more opponents (inno/side team members) left alive, the Sword's sound effect volumes are reduced by v. For less than n opponents, this effect gets proportionally weaker, going away completely at 1 opponent left.

@@ -23,6 +23,7 @@ local HOOK_PLAYER_CONNECT    = "TTT_SoPD_PlayerConnect"
 local HOOK_TARGET_DISCONNECT = "TTT_SoPD_TargetDisconnect"
 local HOOK_TARGET_REMOVED    = "TTT_SoPD_TargetRemoved"
 local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
+local HOOK_SWORD_UNSTICK     = "TTT_SoPD_PickUpStuckSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
@@ -39,8 +40,9 @@ local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVA
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
-local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Value subtracted from victim's DNA timer on kill or corpse stab.", 0, 120)
+local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Value subtracted from victim's DNA timer on kill or corpse stab (per unique Sword).", 0, 120)
 local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
+local CAN_REGRAB_SWORD = CreateConVar("ttt2_sopd_grab_stuck_swords", 1, CVAR_FLAGS, "Whether Swords that are stuck in bodies can be grabbed again.", 0, 1)
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
 local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage)", 0, 100)
 local OTHERS_DMG_BLOCK = CreateConVar("ttt2_sopd_others_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from non-targets (0 = take full damage, 100 = take no damage)", 0, 100)
@@ -327,15 +329,17 @@ if SERVER then
     hook.Add("TTTBeginRound", HOOK_BEGIN_ROUND, DrawTarget)
 
     -- Damage resistance hook
-    hook.Add("EntityTakeDamage", HOOK_TAKE_DAMAGE, function (target, dmgInfo)
+    hook.Add("EntityTakeDamage", HOOK_TAKE_DAMAGE, function (dmgTarget, dmgInfo)
         local attacker = dmgInfo:GetAttacker()
 
-        if HoldsSword(target, true) and IsLivingPlayer(attacker) then
+        if HoldsSword(dmgTarget, false) and IsLivingPlayer(attacker) then
             local dmgBlock = OTHERS_DMG_BLOCK:GetFloat() / 100
+
             if attacker == swordTarget.player then
                 dmgBlock = TARGET_DMG_BLOCK:GetFloat() / 100
             end
-            if target:GetActiveWeapon():GetPacked() then
+
+            if dmgTarget:GetActiveWeapon():GetPacked() then
                 dmgBlock = dmgBlock + (PAP_DMG_BLOCK:GetFloat() / 100)
             end
 
@@ -398,6 +402,10 @@ if SERVER then
         SendTargetData(ply, true)
     end)
 
+    local function IsStuckSword(ent)
+        return ent:GetClass() == "prop_physics" and ent:GetModel() == SWORD_WORLDMODEL
+    end
+
     -- Update target if no sword was used this round
     hook.Add("PlayerDisconnected", HOOK_TARGET_DISCONNECT, function(ply)
         if ply == swordTarget.player then
@@ -414,9 +422,8 @@ if SERVER then
                 local swordWasUsed = false
 
                 for _, ent in ipairs(ents.GetAll()) do
-                    if IsValid(ent) and
-                      (ent:GetClass() == CLASS_NAME and ent:GetStabbedTarget()) or
-                      (ent:GetClass() == "prop_physics" and ent:GetModel() == SWORD_WORLDMODEL) then
+                    if IsValid(ent) and IsStuckSword(ent) or
+                      (ent:GetClass() == CLASS_NAME and ent:GetStabbedTarget()) then
                         swordWasUsed = true
                         break
                     end
@@ -450,13 +457,30 @@ if SERVER then
         end
     end)
 
+    -- Allow clients to pick up targeted swords stuck in bodies
+    hook.Add("PlayerUse", HOOK_SWORD_UNSTICK, function(ply, ent)
+        if CAN_REGRAB_SWORD:GetBool() and IsSwordTargeted()
+          and IsLivingPlayer(ply) and IsStuckSword(ent) then
+            local newSword = ents.Create(CLASS_NAME)
+
+            if IsValid(newSword) then
+                newSword:SetClip1(-1)
+                newSword:SetGrabbedFromCorpse(true)
+                newSword:SetStabbedTarget(IsSwordTargeted())
+                ply:PickupWeapon(newSword)
+                ply:SelectWeapon(CLASS_NAME)
+                ent:Remove()
+            end
+        end
+    end)
+
     -- Tell clients to update shop description on cvar change
     function descVarChange(name, oldVal, newVal)
         net.Start(CVAR_UPDATE_MSG)
         net.Broadcast()
     end
 
-    local descCvars = {HOLDER_SPEEDUP, TARGET_DMG_BLOCK, OTHERS_DMG_BLOCK, RANGE_BUFF, RAGDOLL_STAB_COVERUP, DNA_DESTRUCTION, ENABLE_TARGET_GLOW}
+    local descCvars = {HOLDER_SPEEDUP, DNA_DESTRUCTION, RAGDOLL_STAB_COVERUP, CAN_REGRAB_SWORD, ENABLE_TARGET_GLOW, TARGET_DMG_BLOCK, OTHERS_DMG_BLOCK, RANGE_BUFF}
     for _, cvar in ipairs(descCvars) do
         cvars.RemoveChangeCallback(cvar:GetName(), cvar:GetName())
         cvars.AddChangeCallback(cvar:GetName(), descVarChange, cvar:GetName())
@@ -807,7 +831,7 @@ end
 ---------- SHARED HOOKS ----------
 ----------------------------------
 hook.Add("TTTPlayerSpeedModifier", HOOK_SPEEDMOD, function(ply, _, _, noLag )
-    if HoldsSword(ply, false) then
+    if HoldsSword(ply, false) and not ply:GetActiveWeapon():GetGrabbedFromCorpse() then
         if TTT2 then
             noLag[1] = noLag[1] * HOLDER_SPEEDUP:GetFloat()
         else
@@ -845,6 +869,7 @@ function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 0, "Packed")
     self:NetworkVar("Bool", 1, "PackVerb")
     self:NetworkVar("Bool", 2, "StabbedTarget")
+    self:NetworkVar("Bool", 3, "GrabbedFromCorpse")
     self:NetworkVar("Entity", 0, "PackVictim")
 end
 
@@ -1015,10 +1040,28 @@ if SERVER then
         return retr.HitPos + (ang:Forward() * 10)
     end
 
-    local function adjDNATimer(rag)
-        if rag.killer_sample then
+    local function adjDNATimer(rag, sword)
+        if rag.killer_sample and not (sword and sword:GetGrabbedFromCorpse()) then
             rag.killer_sample.t = rag.killer_sample.t - DNA_DESTRUCTION:GetFloat()
         end
+    end
+
+    local function StickSwordIn(rag, pos, ang, bone)
+        local stuckSword = ents.Create("prop_physics")
+        stuckSword:SetModel(SWORD_WORLDMODEL)
+        stuckSword:SetPos(pos)
+        stuckSword:SetAngles(ang)
+        stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
+        stuckSword:Spawn()
+
+        local phys = stuckSword:GetPhysicsObject()
+        if IsValid(phys) then phys:EnableCollisions(true) end
+        constraint.Weld(rag, stuckSword, bone or 0, 0, 0, true)
+
+        -- need to close over sword in order to keep a valid ref to it
+        rag:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+
+        return stuckSword
     end
 
     function SWEP:StabKill(tr, spos, sdest)
@@ -1028,7 +1071,6 @@ if SERVER then
 
         --wish I knew how to make this not ugly (TODO?)
         local packEffect = self.PackEffect
-        local swepRef = self
 
         -- damage to killma player
         local dmg = DamageInfo()
@@ -1053,11 +1095,9 @@ if SERVER then
         local pos = adjStuckSwordPos(retr, ang)
 
         target.effect_fn = function(rag)
-            local stuckSword
+            local stuckSword = nil
 
             if not packEffect then
-                adjDNATimer(rag)
-
                 -- redo raycast from previously hit point (we might find a better location)
                 local rtr = util.TraceLine({start=pos, endpos=pos + norm * 40, filter=owner, mask=MASK_SHOT_HULL})
 
@@ -1067,21 +1107,8 @@ if SERVER then
                     pos = adjStuckSwordPos(rtr, ang)
                 end
 
-                -- create & attach stuck sword
-                stuckSword = ents.Create("prop_physics")
-                stuckSword:SetModel(SWORD_WORLDMODEL)
-                stuckSword:SetPos(pos)
-                stuckSword:SetAngles(ang)
-                stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
-                stuckSword.CanPickup = false
-                stuckSword:Spawn()
-
-                local phys = stuckSword:GetPhysicsObject()
-                if IsValid(phys) then phys:EnableCollisions(false) end
-                constraint.Weld(rag, stuckSword, bone, 0, 0, true)
-
-                -- need to close over sword in order to keep a valid ref to it
-                rag:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+                stuckSword = StickSwordIn(rag, pos, ang, bone)
+                adjDNATimer(rag, nil)
             end
 
             -- play slay noise from stuck sword
@@ -1089,7 +1116,7 @@ if SERVER then
             net.WriteBool(packEffect)
             net.WriteEntity(stuckSword)
             net.Broadcast()
-            if packEffect then packEffect(swepRef, rag, owner) end
+            if packEffect then packEffect(self, rag, owner) end
             DebugPrint("[SoPD Server] Sent kill msg")
         end
 
@@ -1102,24 +1129,10 @@ if SERVER then
         local hitRagdoll = tr.Entity
 
         if not self:GetPacked() then
+            local stabVol = 0.2
             local ang = adjStuckSwordAngle(tr.Normal)
             local pos = adjStuckSwordPos(tr, ang)
-            local stabVol = 0.2
-
-            -- create & attach stuck sword
-            local stuckSword = ents.Create("prop_physics")
-            stuckSword:SetModel(SWORD_WORLDMODEL)
-            stuckSword:SetPos(pos)
-            stuckSword:SetAngles(ang)
-            stuckSword:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
-            stuckSword.CanPickup = false
-            stuckSword:Spawn()
-
-            local phys = stuckSword:GetPhysicsObject()
-            if IsValid(phys) then phys:EnableCollisions(false) end
-
-            constraint.Weld(hitRagdoll, stuckSword, tr.PhysicsBone or 0, 0, 0, true)
-            hitRagdoll:CallOnRemove("ttt_sword_cleanup", function() SafeRemoveEntity(stuckSword) end)
+            local stuckSword = StickSwordIn(hitRagdoll, pos, ang, tr.PhysicsBone)
 
             -- concealing death cause here if enabled
             if RAGDOLL_STAB_COVERUP:GetBool() then
@@ -1132,7 +1145,7 @@ if SERVER then
                 hitRagdoll.scene.lastDamage = 12047
                 hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
                 hitRagdoll.scene.waterLevel = 0
-                adjDNATimer(hitRagdoll)
+                adjDNATimer(hitRagdoll, self)
             end
 
             local stabSnd = "rag_stab1"
@@ -1232,12 +1245,15 @@ elseif CLIENT then
             self.PrintName = curMetaSWEP.PrintName
         end
 
+        -- no need to update tooltips if the sword is not in someone's inventory
+        local owner = self:GetOwner()
+        if not IsValid(owner) then return end
+
         -- regular alive check may be wrong due to client/server sync delay
         local targetAlive = (swordTarget.ragdoll == nil)
 
         -- update tooltip instructions
         self:ClearHUDHelp()
-        local owner = self:GetOwner()
 
         if not IsValid(self:GetPackVictim()) then  -- sword doesn't have valid disguise
             if owner:GetTeam() ~= TEAM_JESTER then -- owner is not jester
@@ -1254,7 +1270,7 @@ elseif CLIENT then
                                     end
 
                                 else -- target is dead
-                                    if RAGDOLL_STAB_COVERUP:GetBool() then
+                                    if RAGDOLL_STAB_COVERUP:GetBool() and not self:GetGrabbedFromCorpse() then
                                         -- "Stab target's corpse & destroy evidence"
                                         self:AddTTT2HUDHelp("sopd_instruction_stab_coverup")
                                     else
@@ -1359,6 +1375,9 @@ elseif CLIENT then
             label = "label_sopd_speedup",
             min = 1, max = 5, decimal = 1
         })
+        formSword:MakeHelp({
+            label = "label_sopd_dna_destruction_desc"
+        })
         formSword:MakeSlider({
             serverConvar = "ttt2_sopd_dna_destruction",
             label = "label_sopd_dna_destruction",
@@ -1367,6 +1386,10 @@ elseif CLIENT then
         formSword:MakeCheckBox({
             serverConvar = "ttt2_sopd_destroy_evidence",
             label = "label_sopd_destroy_evidence"
+        })
+        formSword:MakeCheckBox({
+            serverConvar = "ttt2_sopd_grab_stuck_swords",
+            label = "label_sopd_grab_stuck_swords"
         })
         formSword:MakeCheckBox({
             serverConvar = "ttt2_sopd_target_glow",

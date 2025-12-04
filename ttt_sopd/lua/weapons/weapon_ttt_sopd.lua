@@ -950,11 +950,16 @@ function SWEP:PrimaryAttack()
         if preReqs then
             local CAN_STAB_ENT     = CanBeStabbed(hitEnt)
             local OWNER_NOT_JESTER = owner:GetTeam() ~= TEAM_JESTER
-            local isKill = CAN_STAB_ENT and OWNER_NOT_JESTER
+            local NO_MARK_IMMUNITY = CAN_STAB_ENT and not (
+              hitEnt:GetTeam() == TEAM_MARKER and MARKER_DATA
+              and MARKER_DATA.marked_players[owner:SteamID64()])
 
-            DebugPrint("• KILL - "          .. tostring(isKill)
-                .. " -> can stab ent: "     .. tostring(CAN_STAB_ENT)
-                .. " & owner is not jest: " .. tostring(OWNER_NOT_JESTER))
+            local isKill = CAN_STAB_ENT and OWNER_NOT_JESTER and NO_MARK_IMMUNITY
+
+            DebugPrint("• KILL - "                .. tostring(isKill)
+                .. " -> can stab ent: "           .. tostring(CAN_STAB_ENT)
+                .. " & owner is not jest: "       .. tostring(OWNER_NOT_JESTER)
+                .. " & owner not marked by ent: " .. tostring(NO_MARK_IMMUNITY))
 
             if isKill then
                 self:StabKill(tr, spos, sdest)

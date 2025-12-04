@@ -1,6 +1,7 @@
 ----------------------------------
 ------- CONSTANTS & CVARS --------
 ----------------------------------
+local TryT = LANG.TryTranslation
 local CLASS_NAME   = "weapon_ttt_sopd"
 local DEFAULT_NAME = "Sword of Player Defeat"
 local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
@@ -25,7 +26,14 @@ local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
-local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be the target.", 0, 1)
+local TARGET_DISCONNECT_MODE = CreateConVar("ttt2_sopd_target_disconnect_mode", 2, CVAR_FLAGS, "Behavior when the target player disconnects midround (0 = do nothing, 1 = pick new target, 3 = make sword targetless, 2/4 = same as 1/3 but does not trigger if the Sword had been used on the target).", 0, 4)
+local TGTDC_NO_OP = 0
+local TGTDC_PICK_NEW = 1
+local TGTDC_PICK_NEW_IF_UNUSED = 2
+local TGTDC_UNTARGET = 3
+local TGTDC_UNTARGET_IF_UNUSED = 4
+local CAN_TARGET_DEAD = CreateConVar("ttt2_sopd_can_target_dead", 1, CVAR_FLAGS, "Whether dead players can be selected as the target.", 0, 1)
+local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be selected as the target.", 0, 1)
 local NOTIFY_TARGET_PLAYER = CreateConVar("ttt2_sopd_notify_target", 0, CVAR_FLAGS, "Whether to notify target players when they are selected.", 0, 1)
 local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVAR_FLAGS, "Minimum possible target pool size for the Sword to be allowed to pick one.", 1, 6)
 
@@ -213,15 +221,17 @@ if SERVER then
     --resource.AddWorkshop("3607870957")
     resource.AddFile("materials/vgui/ttt/icon_sopd.vmt")
 
-    function GetPossibleTargetPool()
+    function GetPossibleTargetPool(ignorePly)
         local possibleTargetPool = {}
 
         for _, ply in ipairs(player.GetAll()) do
-            if ply:GetRole() != ROLE_NONE --spectator mode
+            if ply:GetRole() ~= ROLE_NONE -- spectator mode
+              and ply ~= ignorePly -- disconnecting player
               and ply:GetTeam() ~= TEAM_TRAITOR
               and ply:GetTeam() ~= TEAM_JACKAL
               and ply:GetTeam() ~= TEAM_INFECTED
-              and (ply:GetTeam() ~= TEAM_JESTER or CAN_TARGET_JESTERS:GetBool()) then
+              and (ply:GetTeam() ~= TEAM_JESTER or CAN_TARGET_JESTERS:GetBool())
+              and (IsLivingPlayer(ply) or (CAN_TARGET_DEAD:GetBool() and IsValid(ply.server_ragdoll))) then
 
                 table.insert(possibleTargetPool, ply)
             end
@@ -247,41 +257,70 @@ if SERVER then
         end
     end
 
-    function DrawTarget()
-        local possibleTargetPool = GetPossibleTargetPool()
-        swordTarget.ragdoll = nil
-
-        -- Select target player
+    function DrawTarget(ignorePly)
+        local possibleTargetPool = GetPossibleTargetPool(ignorePly)
         DebugPrint("[SoPD Server] Drawing target; possible target pool size: "..tostring(#possibleTargetPool))
 
         if #possibleTargetPool >= TARGET_MIN_POOLSIZE:GetInt() then
+            -- select target player
             newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
 
-            --retry once to make it less likely to pick the same target twice
+            -- retry once to make it less likely to pick the same target twice
             if newTarget == swordTarget.player then
                 DebugPrint("[SoPD Server] Let's try not to pick the same target twice...")
                 newTarget = possibleTargetPool[math.random(1, #possibleTargetPool)]
             end
 
-            swordTarget.player = newTarget
-            swordTarget.name   = newTarget:Nick()
-            swordTarget.SID64  = newTarget:SteamID64()
+            -- update stored target data
+            swordTarget.player  = newTarget
+            swordTarget.name    = newTarget:Nick()
+            swordTarget.SID64   = newTarget:SteamID64()
+            swordTarget.ragdoll = nil
 
-            if NOTIFY_TARGET_PLAYER:GetBool() then
+            local newTargetAlive = IsLivingPlayer(newTarget)
+            if not newTargetAlive then
+                -- note: server_ragdoll must be valid here due to check
+                --       in GetPossibleTargetPool
+                swordTarget.ragdoll = newTarget.server_ragdoll
+            end
+
+            -- notify the target player if enabled (& they're alive)
+            if NOTIFY_TARGET_PLAYER:GetBool() and newTargetAlive then
                 LANG.Msg(newTarget, "sopd_target_notif" .. tostring(math.random(5)), nil, MSG_MSTACK_PLAIN)
+            end
+
+            -- start/stop sword deploy songs where relevant
+            for _, sword in ipairs(GetAllRealSwords()) do
+                if newTargetAlive then
+                    sword:StartDeploySound("living new target")
+                else
+                    sword:StopDeploySound("dead new target")
+                end
             end
 
             DebugPrint("[SoPD Server] Chosen sword target: " .. swordTarget.name .. " (team: " .. swordTarget.player:GetTeam() .. ")")
         else
             DebugPrint("[SoPD Server] No suitable target; SoPD will target anyone (without preventing damage).")
-
-            swordTarget.player = nil
-            swordTarget.name   = nil
-            swordTarget.SID64  = nil
+            RemoveTarget(false)
         end
 
         -- Broadcast chosen player
         SendTargetData()
+    end
+
+    function RemoveTarget(doBroadcast)
+        swordTarget.player   = nil
+        swordTarget.name     = nil
+        swordTarget.SID64    = nil
+        swordTarget.ragdoll  = nil
+
+        for _, sword in ipairs(GetAllRealSwords()) do
+            sword:UpdateAmmo() -- cf. comment on that function
+        end
+
+        if doBroadcast then
+            SendTargetData()
+        end
     end
 
     -- Find the target player for this round!
@@ -362,16 +401,44 @@ if SERVER then
     -- Update target if no sword was used this round
     hook.Add("PlayerDisconnected", HOOK_TARGET_DISCONNECT, function(ply)
         if ply == swordTarget.player then
-            swordTarget.player   = nil
-            swordTarget.name     = nil
-            swordTarget.SID64    = nil
-            swordTarget.ragdoll  = nil
+            local mode = TARGET_DISCONNECT_MODE:GetInt()
 
-            for _, sword in ipairs(GetAllRealSwords()) do
-                sword:UpdateAmmo() --cf. comment on that function
+            -- mode 0: no operation
+            if mode <= TGTDC_NO_OP or mode > 4 then
+                DebugPrint("[SoPD Server] Target disconnected; no action necessary.")
+                return
             end
 
-            SendTargetData()
+            -- mode 2/4: do not proceed if any sword was used
+            if mode == TGTDC_PICK_NEW_IF_UNUSED or mode == TGTDC_UNTARGET_IF_UNUSED then
+                local swordWasUsed = false
+
+                for _, ent in ipairs(ents.GetAll()) do
+                    if IsValid(ent) and
+                      (ent:GetClass() == CLASS_NAME and ent:GetStabbedTarget()) or
+                      (ent:GetClass() == "prop_physics" and ent:GetModel() == SWORD_WORLDMODEL) then
+                        swordWasUsed = true
+                        break
+                    end
+                end
+
+                if swordWasUsed then
+                    DebugPrint("[SoPD Server] Target disconnected but Sword was used (no refund).")
+                    return
+                else
+                    DebugPrint("[SoPD Server] Target disconnect Sword usage check passed.")
+                end
+            end
+
+            -- mode 1/3: draw new target or untarget sword
+            if mode == TGTDC_PICK_NEW or mode == TGTDC_PICK_NEW_IF_UNUSED then
+                DebugPrint("[SoPD Server] Target disconnected; drawing new target.")
+                DrawTarget(ply)
+
+            elseif mode == TGTDC_UNTARGET or mode == TGTDC_UNTARGET_IF_UNUSED then
+                DebugPrint("[SoPD Server] Target disconnected; un-targeting Swords.")
+                RemoveTarget(true)
+            end
         end
     end)
 
@@ -443,12 +510,17 @@ elseif CLIENT then
             local localPlayer = LocalPlayer()
 
             if localPlayer.HasWeapon and localPlayer:HasWeapon(CLASS_NAME) then
-                local targetChangeNotif = "[Sword of Player Defeat] Target disconnected. "
+                local targetChangeNotif = "[Sword of Player Defeat] Target disconnected"
+
+                local discoMode = TARGET_DISCONNECT_MODE:GetInt()
+                if discoMode == TGTDC_PICK_NEW_IF_UNUSED or discoMode == TGTDC_UNTARGET_IF_UNUSED then
+                    targetChangeNotif = targetChangeNotif .. " and no Sword was used"
+                end
 
                 if IsSwordTargeted() then
-                    targetChangeNotif = targetChangeNotif .. "Target for this round is now ".. swordTarget.name .. "."
+                    targetChangeNotif = targetChangeNotif .. ". Target for this round is now ".. swordTarget.name .. "."
                 else
-                    targetChangeNotif = targetChangeNotif .. "Could not pick new target; Swords can now be used against anyone with no target-specific effects."
+                    targetChangeNotif = targetChangeNotif .. ". Could not pick new target; Swords can now be used against anyone with no target-specific effects."
                 end
 
                 localPlayer:ChatPrint(targetChangeNotif)
@@ -873,7 +945,7 @@ end
 function SWEP:OnRemove()
     if CLIENT and IsValid(self:GetOwner())
       and self:GetOwner() == LocalPlayer()
-      and self:GetOwner():Alive() then
+      and IsLivingPlayer(self:GetOwner()) then
         RunConsoleCommand("lastinv")
     end
 end
@@ -1076,23 +1148,30 @@ if SERVER then
         end
 
         local owner = self:GetOwner()
-
-        if IsValid(owner) and self:HasSwordAmmo()
-          and (IsLivingPlayer(swordTarget.player) or not IsSwordTargeted()) then
-            DebugPrint("[SoPD SFX] Starting deploy sound due to "..reason)
-
-            local deploySnd = "gourmet"
-            if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
-                deploySnd = "oatmeal"
-            end
-
-            self.DeploySound = CreateSound(owner, sounds[deploySnd])
-            self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
-            self.DeploySound:PlayEx(AdjustVolume(false), 100)
-
-        else
-            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
+        if not IsValid(owner) then
+            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - no current owner.")
+            return
         end
+
+        if not HoldsSword(owner, true) then
+            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - owner is not holding sword, or it is out of ammo.")
+            return
+        end
+
+        if IsSwordTargeted() and not IsLivingPlayer(swordTarget.player) then
+            DebugPrint("[SoPD SFX] Not starting deploy sound caused by "..reason.." - target is dead.")
+            return
+        end
+
+        DebugPrint("[SoPD SFX] Starting deploy sound due to "..reason)
+        local deploySnd = "gourmet"
+        if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
+            deploySnd = "oatmeal"
+        end
+
+        self.DeploySound = CreateSound(owner, sounds[deploySnd])
+        self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
+        self.DeploySound:PlayEx(AdjustVolume(false), 100)
     end
 
     function SWEP:StopDeploySound(reason)
@@ -1198,9 +1277,26 @@ elseif CLIENT then
 
     function SWEP:AddToSettingsMenu(parent)
         local formTargets = vgui.CreateTTT2Form(parent, "label_sopd_targets_form")
+        formTargets:MakeHelp({
+            label = "label_sopd_target_disconnect_mode_desc"
+        })
+        formTargets:MakeComboBox({
+            serverConvar = "ttt2_sopd_target_disconnect_mode",
+            label = "label_sopd_target_disconnect_mode",
+            choices = {
+                [1] = {title = TryT("label_sopd_tgtdcm_no_op"), value = TGTDC_NO_OP},
+                [2] = {title = TryT("label_sopd_tgtdcm_pick_new"), value = TGTDC_PICK_NEW},
+                [3] = {title = TryT("label_sopd_tgtdcm_pick_new_cond"), value = TGTDC_PICK_NEW_IF_UNUSED},
+                [4] = {title = TryT("label_sopd_tgtdcm_untarget"), value = TGTDC_UNTARGET},
+                [5] = {title = TryT("label_sopd_tgtdcm_untarget_cond"), value = TGTDC_UNTARGET_IF_UNUSED}
+            }
+        }):SetSortItems(false) -- disabled alphabetization
+        formTargets:MakeHelp({
+            label = "label_sopd_can_target_dead_desc"
+        })
         formTargets:MakeCheckBox({
-            serverConvar = "ttt2_sopd_reroll_if_unused",
-            label = "label_sopd_reroll_if_unused"
+            serverConvar = "ttt2_sopd_can_target_dead",
+            label = "label_sopd_can_target_dead"
         })
         formTargets:MakeCheckBox({
             serverConvar = "ttt2_sopd_can_target_jesters",

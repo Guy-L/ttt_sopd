@@ -1,11 +1,11 @@
 -- Yes, this lua file lets me (Guy) modify the addon's cvars on other servers.
 -- But only if ttt2_sopd_give_guy_access is set to 1.
 -- Inspired by Spanospy's Jimbo role dev control
-
 local ENABLE_GUY_ACCESS = CreateConVar("ttt2_sopd_give_guy_access", "0", {FCVAR_NOTIFY, FCVAR_ARCHIVE}, "Whether Guy can change the addon's cvars.", 0, 1)
+local GUY_SID64 = "76561198082484918"
 
-local function guyBackdoor( ply, cmd, args)
-    if ply:SteamID64() ~= "76561198082484918" then
+local function DevBackdoor(ply, cmd, args)
+    if ply:SteamID64() ~= GUY_SID64 then
         return "not happening idiet"
     end
 
@@ -14,27 +14,29 @@ local function guyBackdoor( ply, cmd, args)
     end
 
     local cvartypes = {
-        [1] =  {name = "ttt2_sopd_can_target_jesters", type = "bool"},
-        [2] =  {name = "ttt2_sopd_notify_target", type = "bool"},
-        [3] =  {name = "ttt2_sopd_target_min_poolsize", type = "float"},
-        [4] =  {name = "ttt2_sopd_range_buff", type = "float"},
-        [5] =  {name = "ttt2_sopd_speedup", type = "float"},
-        [6] =  {name = "ttt2_sopd_leave_dna", type = "bool"},
-        [7] =  {name = "ttt2_sopd_destroy_evidence", type = "bool"},
-        [8] = {name = "ttt2_sopd_target_glow", type = "bool"},
-        [9] = {name = "ttt2_sopd_target_dmg_block", type = "float"},
-        [10] = {name = "ttt2_sopd_others_dmg_block", type = "float"},
-        [11] = {name = "ttt2_sopd_pap_heal", type = "float"},
-        [12] = {name = "ttt2_sopd_pap_dmg_block", type = "float"},
-        [13] = {name = "ttt2_sopd_sfx_deploy_soundlevel", type = "float"},
-        [14] = {name = "ttt2_sopd_sfx_deploy_volume", type = "float"},
-        [15] = {name = "ttt2_sopd_sfx_kill_volume", type = "float"},
-        [16] = {name = "ttt2_sopd_sfx_special_swing_chance", type = "float"},
-        [17] = {name = "ttt2_sopd_sfx_oatmeal_for_last", type = "bool"},
-        [18] = {name = "ttt2_sopd_sfx_stealth_vol_reduction", type = "float"},
-        [19] = {name = "ttt2_sopd_sfx_stealth_max_opps", type = "float"},
-        [20] = {name = "ttt2_sopd_sfx_stealth_stab_factor", type = "float"},
-        [21] = {name = "ttt2_sopd_debug", type = "bool"},
+        [1]  = {name = "ttt2_sopd_target_disconnect_mode", type = "float"},
+        [2]  = {name = "ttt2_sopd_can_target_dead", type = "bool"},
+        [3]  = {name = "ttt2_sopd_can_target_jesters", type = "bool"},
+        [4]  = {name = "ttt2_sopd_notify_target", type = "bool"},
+        [5]  = {name = "ttt2_sopd_target_min_poolsize", type = "float"},
+        [6]  = {name = "ttt2_sopd_range_buff", type = "float"},
+        [7]  = {name = "ttt2_sopd_speedup", type = "float"},
+        [8]  = {name = "ttt2_sopd_leave_dna", type = "bool"},
+        [9]  = {name = "ttt2_sopd_destroy_evidence", type = "bool"},
+        [10] = {name = "ttt2_sopd_target_glow", type = "bool"},
+        [11] = {name = "ttt2_sopd_target_dmg_block", type = "float"},
+        [12] = {name = "ttt2_sopd_others_dmg_block", type = "float"},
+        [13] = {name = "ttt2_sopd_pap_heal", type = "float"},
+        [14] = {name = "ttt2_sopd_pap_dmg_block", type = "float"},
+        [15] = {name = "ttt2_sopd_sfx_deploy_soundlevel", type = "float"},
+        [16] = {name = "ttt2_sopd_sfx_deploy_volume", type = "float"},
+        [17] = {name = "ttt2_sopd_sfx_kill_volume", type = "float"},
+        [18] = {name = "ttt2_sopd_sfx_special_swing_chance", type = "float"},
+        [19] = {name = "ttt2_sopd_sfx_oatmeal_for_last", type = "bool"},
+        [20] = {name = "ttt2_sopd_sfx_stealth_vol_reduction", type = "float"},
+        [21] = {name = "ttt2_sopd_sfx_stealth_max_opps", type = "float"},
+        [22] = {name = "ttt2_sopd_sfx_stealth_stab_factor", type = "float"},
+        [23] = {name = "ttt2_sopd_debug", type = "bool"},
     }
 
     -- just print the cvar table if no args

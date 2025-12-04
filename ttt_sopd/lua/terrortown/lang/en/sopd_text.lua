@@ -23,6 +23,19 @@ L["sopd_instantkill"] = "DEFEAT"
 L["sopd_instanteat"] = "INHALE"
 
 L["label_sopd_targets_form"] = "Target Selection"
+L["label_sopd_target_disconnect_mode_desc"] = [[
+The Sword is meant to have a target picked randomly among non-Traitors at round start, but in certain cases may not (deathmatch mode or a target could not be selected, see below). The Sword will work on the target even if they disconnect.
+You can specify the behavior of a "refund" mechanic for when the Sword has a target player but they disconnect mid-round.
+
+Note that it is not recommended to allow the Sword to be re-buyable if your settings make it likely for the Sword to become targetless. If a Sword is targetless, it can be used to kill anybody (without target-specific effects).]]
+L["label_sopd_target_disconnect_mode"] = "Behavior when target player disconnects mid-round"
+L["label_sopd_tgtdcm_no_op"] = "Do nothing"
+L["label_sopd_tgtdcm_pick_new"] = "Always pick new target"
+L["label_sopd_tgtdcm_pick_new_cond"] = "Pick new target unless a Sword was used"
+L["label_sopd_tgtdcm_untarget"] = "Always make Sword targetless"
+L["label_sopd_tgtdcm_untarget_cond"] = "Make Sword targetless unless one was used"
+L["label_sopd_can_target_dead_desc"] = "Only relevant if the above behavior allows drawing a new target mid-round (players cannot be dead at round start)."
+L["label_sopd_can_target_dead"] = "Dead players with a valid ragdoll can be selected as the target"
 L["label_sopd_can_target_jesters"] = "Jesters can be selected as the target"
 L["label_sopd_notify_target"] = "Notify target players when they are selected"
 L["label_sopd_target_min_poolsize_desc"] = "If the number of possible targets is lower than this value when it's time to pick a new one, the Sword will become targetless."

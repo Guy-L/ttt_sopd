@@ -50,12 +50,49 @@ local function DevBackdoor(ply, cmd, args)
         return output
     end
 
+    -- requests to change SoPD's ShopEditor properties (rebuyable, credits, etc)
+    if args[1] == "shopedit" or args[1] == "shopeditor" then
+        if #args > 3 then return "Wrong argument count." end
+        if #args == 3 and not tonumber(args[3]) then return "Cannot assign to non-numeric value." end
+
+        local accessName = ShopEditor.accessName
+        local itemName = "weapon_ttt_sopd"
+
+        local isTable, data = database.GetValue(accessName, itemName)
+        if not isTable then return "Could not fetch SoPD shop data table." end
+        local validKeys = ""
+
+        for k, v in pairs(data) do
+            if #args > 1 and string.lower(args[2]) == string.lower(k) then
+                local valDefault = database.GetDefaultValue(accessName, itemName, k)
+
+                if #args == 3 then
+                    database.SetValue(accessName, itemName, k, tonumber(args[3]))
+                    local _, newVal = database.GetValue(accessName, itemName, k)
+
+                    return k .. " now set to " .. tostring(newVal) .. " (default: " .. tostring(valDefault) ..")"
+                else
+                    local _, curVal = database.GetValue(accessName, itemName, k)
+
+                    return k .. " is set to " .. tostring(curVal) .. " (default: " .. tostring(valDefault) ..")"
+                end
+            end
+
+            validKeys = validKeys .. k .. ", "
+        end
+
+        if #args > 1 then
+            return args[2] .. " is not a valid SoPD shop data key.\nValid keys: " .. validKeys
+        else
+            return "Valid keys: " .. validKeys
+        end
+
     -- limit myself to only be able to change sopd cvars
-    if string.sub(args[1],1,10) == "ttt2_sopd_" then
+    elseif string.sub(args[1],1,10) == "ttt2_sopd_" then
         local cvar = GetConVar(args[1])
 
         if cvar ~= nil then
-            if #args < 2 then return "Not enough args!" end
+            if #args ~= 2 then return "Wrong argument count." end
 
             local datatype
             for _, c in ipairs(cvartypes) do
@@ -94,5 +131,5 @@ local function DevBackdoor(ply, cmd, args)
 end
 
 concommand.Add("sopd_devdoor", function(ply, cmd, args)
-    ply:PrintMessage(HUD_PRINTCONSOLE, guyBackdoor(ply, cmd, args))
+    ply:PrintMessage(HUD_PRINTCONSOLE, DevBackdoor(ply, cmd, args))
 end)

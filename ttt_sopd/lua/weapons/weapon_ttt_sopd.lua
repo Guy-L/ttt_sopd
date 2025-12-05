@@ -488,8 +488,13 @@ if SERVER then
 
     -- Allow clients to pick up targeted swords stuck in bodies
     hook.Add("PlayerUse", HOOK_SWORD_UNSTICK, function(ply, ent)
-        if CAN_REGRAB_SWORD:GetBool() and IsSwordTargeted()
-          and IsLivingPlayer(ply) and IsStuckSword(ent) then
+        if IsLivingPlayer(ply) and CAN_REGRAB_SWORD:GetBool()
+          and IsSwordTargeted() and IsStuckSword(ent) then
+            -- don't allow grab if player already has one
+            for _, wep in ipairs(ply:GetWeapons()) do
+                if wep:GetClass() == CLASS_NAME then return end
+            end
+
             local newSword = ents.Create(CLASS_NAME)
 
             if IsValid(newSword) then

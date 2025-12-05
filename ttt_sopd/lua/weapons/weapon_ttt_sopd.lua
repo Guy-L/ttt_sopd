@@ -117,8 +117,10 @@ function IsLivingPlayer(ply)
     return IsPlayer(ply) and ply:Alive() and not ply:IsSpec()
 end
 
---same as target drawing pool but always without jesters
+--same as target drawing pool but without jesters (unless they are the target)
 function IsOpponent(ply, canBeDead)
+    if ply == swordTarget.player then return true end
+
     return (IsLivingPlayer(ply) or canBeDead)
        and ply:GetTeam() ~= TEAM_TRAITOR and ply:GetTeam() ~= TEAM_JACKAL
        and ply:GetTeam() ~= TEAM_INFECTED and ply:GetTeam() ~= TEAM_JESTER

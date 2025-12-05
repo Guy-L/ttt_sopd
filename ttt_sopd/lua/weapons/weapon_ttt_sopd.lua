@@ -583,11 +583,10 @@ elseif CLIENT then
 
                 localPlayer:ChatPrint(targetChangeNotif)
             end
-        end
 
-        -- update sword UI
-        if isTargetChange then
+            -- update sword UI & material
             UpdateSwordMeta("target change")
+            UpdateSwordCrystal()
         end
 
         for _, sword in ipairs(GetAllRealSwords()) do
@@ -767,6 +766,18 @@ elseif CLIENT then
             end
         end
     end)
+
+    -- update sword's crystal material to blend in target pfp
+    local crystalMat = Material("models/ttt/sopd/sopd_crystal")
+    function UpdateSwordCrystal()
+        if IsSwordTargeted() then
+            crystalMat:SetTexture("$detail", draw.GetAvatarMaterial(swordTarget.SID64, "large"):GetTexture("$basetexture"))
+        else
+            crystalMat:SetUndefined("$detail")
+        end
+
+        crystalMat:Recompute()
+    end
 
     -- update sword's shop & initialization info
     function UpdateSwordMeta(reason)

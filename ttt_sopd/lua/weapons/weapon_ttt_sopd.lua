@@ -42,7 +42,7 @@ local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVA
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
-local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Time subtracted from victim's DNA timer on kill or corpse stab (per unique Sword, in seconds).", 0, 120)
+local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 60, CVAR_FLAGS, "Time subtracted from victim's DNA timer on kill or corpse stab (per unique Sword, in seconds).", 0, 120)
 local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (reducing DNA if relevant convar is disabled).", 0, 1)
 local CAN_REGRAB_SWORD = CreateConVar("ttt2_sopd_grab_stuck_swords", 1, CVAR_FLAGS, "Whether targeted Swords that are stuck in bodies can be grabbed again.", 0, 1)
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
@@ -850,7 +850,7 @@ elseif CLIENT then
         local dnaDestruction = DNA_DESTRUCTION:GetFloat()
         if dnaDestruction >= 100 then
             desc = desc .. "Leaves no DNA. "
-        elseif dnaDestruction >= 70 then
+        elseif dnaDestruction >= 60 then
             desc = desc .. "Doesn't leave much DNA. "
         elseif dnaDestruction > 0 then
             desc = desc .. "Leaves reduced DNA. "
@@ -862,7 +862,7 @@ elseif CLIENT then
             desc = desc .. "If " .. swordTarget.name .. " is dead, you can stab their corpse to falsify"
             if dnaDestruction >= 100 then
                 desc = desc .. " evidence and destroy DNA"
-            elseif dnaDestruction >= 70 then
+            elseif dnaDestruction >= 60 then
                 desc = desc .. " evidence and remove DNA"
             elseif dnaDestruction > 0 then
                 desc = desc .. " evidence and reduce DNA"

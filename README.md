@@ -29,7 +29,7 @@ Note that changing most of these updates the item's shop description to reflect 
 | ------------- | ----------- | ------- |
 | **range_buff** | Multiplier of the base TTT2 knife's range (1 = same range as knife). | 1.5 |
 | **speedup** | Player speed multiplier while holding the Sword.<br>*Note*: Does not apply to Swords that were retrieved from bodies. | 1.3 |
-| **dna_destruction** | Time removed from DNA sample on stab, in seconds.<br>*Note*: Does not apply to Swords that were retrieved from bodies. | 70 |
+| **dna_destruction** | Time removed from DNA sample on stab, in seconds.<br>*Note*: Does not apply to Swords that were retrieved from bodies. | 60 |
 | **destroy_evidence** | Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (reducing DNA as described above). | true |
 | **grab_stuck_swords** | Whether targeted Swords that are stuck in bodies can be retrieved. | true |
 | **target_glow** | Whether the target player glows for a player holding the Sword. | true |

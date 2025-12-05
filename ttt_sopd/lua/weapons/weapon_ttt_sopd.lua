@@ -1133,7 +1133,17 @@ if SERVER then
         return retr.HitPos + (ang:Forward() * 10)
     end
 
-    local function adjDNATimer(rag, sword)
+    local function AlterCrimeScene(rag, sword)
+        rag.was_headshot = false
+        rag.dmgwep       = CLASS_NAME
+        rag.dmgtype      = DMG_SLASH
+
+        if rag.scene then
+            rag.scene.lastDamage = 12047
+            rag.scene.hit_trace  = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
+            rag.scene.waterLevel = 0
+        end
+
         if rag.killer_sample and not (sword and sword:GetGrabbedFromCorpse()) then
             rag.killer_sample.t = rag.killer_sample.t - DNA_DESTRUCTION:GetFloat()
         end
@@ -1212,7 +1222,7 @@ if SERVER then
                 end
 
                 stuckSword = StickSwordIn(rag, pos, ang, bone)
-                adjDNATimer(rag, nil)
+                AlterCrimeScene(rag, nil)
             end
 
             -- play slay noise from stuck sword
@@ -1226,6 +1236,10 @@ if SERVER then
 
         --dispatch killing attack, trigger sword sticking function & clean up
         target:DispatchTraceAttack(dmg, spos + (owner:GetAimVector() * 3), sdest)
+        if IsLivingPlayer(target) then
+            DebugPrint("[SoPD Server] Sword victim didn't die on stab; correcting...")
+            target:Kill()
+        end
         self:Consume(false)
     end
 
@@ -1242,14 +1256,7 @@ if SERVER then
             if RAGDOLL_STAB_COVERUP:GetBool() then
                 -- gameplay relevant mechanic should have SOME risk
                 stabVol = math.max(stabVol, AdjustVolume(true))
-
-                hitRagdoll.was_headshot = false
-                hitRagdoll.dmgwep = CLASS_NAME
-                hitRagdoll.dmgtype = DMG_SLASH
-                hitRagdoll.scene.lastDamage = 12047
-                hitRagdoll.scene.hit_trace = util.TraceHull({start=Vector(1,1,1), endpos=Vector(1,1,1)}) --pointblank attack
-                hitRagdoll.scene.waterLevel = 0
-                adjDNATimer(hitRagdoll, self)
+                AlterCrimeScene(hitRagdoll, self)
             end
 
             local stabSnd = "rag_stab1"

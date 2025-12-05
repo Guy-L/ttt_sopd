@@ -87,6 +87,7 @@ function UPGRADE:Apply(SWEP)
     elseif SERVER then
         SWEP:SetPacked(true) --cf. note in SetupDataTables
         SWEP:SetPackVerb(math.random() > 0.5)
+        SWEP:StartDeploySound("packed")
 
         -- carry over relevant vars
         if self.StabbedTarget ~= nil then
@@ -164,6 +165,9 @@ end
 -- jank to smuggle networked vars during the upgrade
 function UPGRADE:Condition(SWEP)
     if SERVER then
+        SWEP:SetPacked(true)
+        SWEP:StopDeploySound("packing")
+
         if UPGRADE.StabbedTarget == nil then
             UPGRADE.StabbedTarget     = SWEP:GetStabbedTarget()
             UPGRADE.GrabbedFromCorpse = SWEP:GetGrabbedFromCorpse()

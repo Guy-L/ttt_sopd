@@ -118,16 +118,17 @@ function IsLivingPlayer(ply)
 end
 
 --same as target drawing pool but always without jesters
+function IsOpponent(ply, canBeDead)
+    return (IsLivingPlayer(ply) or canBeDead)
+       and ply:GetTeam() ~= TEAM_TRAITOR and ply:GetTeam() ~= TEAM_JACKAL
+       and ply:GetTeam() ~= TEAM_INFECTED and ply:GetTeam() ~= TEAM_JESTER
+end
+
 function GetOpponentCount()
     local opponentCnt = 0
 
     for _, ply in ipairs(player.GetAll()) do
-        if IsLivingPlayer(ply) 
-          and ply:GetTeam() ~= TEAM_TRAITOR
-          and ply:GetTeam() ~= TEAM_JACKAL
-          and ply:GetTeam() ~= TEAM_INFECTED
-          and ply:GetRole() ~= TEAM_JESTER then
-
+        if IsOpponent(ply) then
             opponentCnt = opponentCnt + 1
         end
     end
@@ -359,7 +360,7 @@ if SERVER then
             SendTargetData(nil, false)
         end
 
-        -- Find any held swords & adjust or end (if target died) their deploy sounds
+        -- Find any held swords & adjust or end (if target died) their deploy songs
         for _, p in ipairs(player.GetAll()) do
             local wep = p:GetActiveWeapon()
             if IsValid(wep) and wep:GetClass() == CLASS_NAME then
@@ -367,8 +368,20 @@ if SERVER then
                     wep:StopDeploySound("target death")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
-                    wep.DeploySound:ChangeVolume(AdjustVolume(false))
+                    if not wep:GetPacked() and OATMEAL_FOR_LAST:GetBool()
+                      and GetOpponentCount() == 1 and IsOpponent(ply, true) then
+                        -- restart song to match situation (target is last opp alive)
+                        DebugPrint("[SoPD SFX] Changing deploy song as target is now last opponent alive | Died: ", ply:Nick())
+                        wep:StopDeploySound("target is last alive (change to oatmeal)")
+
+                        timer.Simple(0.2, function()
+                            wep:StartDeploySound("target is last alive (change to oatmeal)")
+                        end)
+
+                    else -- common case, just adjust volume
+                        DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget death | Died: ", ply:Nick())
+                        wep.DeploySound:ChangeVolume(AdjustVolume(false))
+                    end
                 end
             end
         end
@@ -384,7 +397,7 @@ if SERVER then
             SendTargetData(nil, false)
         end
 
-        -- Find any held swords & adjust or start (if target respawned) their deploy sounds
+        -- Find any held swords & adjust or start (if target respawned) their deploy songs
         for _, p in ipairs(player.GetAll()) do
             local wep = p:GetActiveWeapon()
             if IsValid(wep) and wep:GetClass() == CLASS_NAME then
@@ -392,8 +405,20 @@ if SERVER then
                     wep:StartDeploySound("target respawn")
 
                 elseif wep.DeploySound and wep.DeploySound:IsPlaying() then
-                    DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to nontarget respawn | Respawned: ", ply:Nick())
-                    wep.DeploySound:ChangeVolume(AdjustVolume(false))
+                    if not wep:GetPacked() and OATMEAL_FOR_LAST:GetBool()
+                      and GetOpponentCount() == 2 and IsOpponent(ply) then
+                        -- restart song to match situation (target no longer last opp alive)
+                        DebugPrint("[SoPD SFX] Changing deploy song as target is no longer last alive | Respawned: ", ply:Nick())
+                        wep:StopDeploySound("target not last alive (change to gourmet)")
+
+                        timer.Simple(0.2, function()
+                            wep:StartDeploySound("target not last alive (change to gourmet)")
+                        end)
+
+                    else -- common case, just adjust volume
+                        DebugPrint("[SoPD SFX] Actualizing sword deploy volume due to non-target respawn | Respawned: ", ply:Nick())
+                        wep.DeploySound:ChangeVolume(AdjustVolume(false))
+                    end
                 end
             end
         end
@@ -1268,7 +1293,7 @@ if SERVER then
 
         DebugPrint("[SoPD SFX] Starting deploy sound due to "..reason)
         local deploySnd = "gourmet"
-        if GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool() then
+        if self:GetPacked() or (GetOpponentCount() == 1 and OATMEAL_FOR_LAST:GetBool()) then
             deploySnd = "oatmeal"
         end
 

@@ -908,7 +908,13 @@ end
 ---------- SHARED HOOKS ----------
 ----------------------------------
 hook.Add("TTTPlayerSpeedModifier", HOOK_SPEEDMOD, function(ply, _, _, noLag )
-    if HoldsSword(ply, false) and not ply:GetActiveWeapon():GetGrabbedFromCorpse() then
+    if not IsLivingPlayer(ply) then return end
+    local wep = ply:GetActiveWeapon()
+
+    -- note: not sure why GetGrabbedFromCorpse is sometimes nil
+    --       for a frame or two when grabbing Sword from a
+    --       corpse outside of local testing
+    if IsValid(wep) and wep:GetClass() == CLASS_NAME and wep.GetGrabbedFromCorpse and not wep:GetGrabbedFromCorpse() then
         if TTT2 then
             noLag[1] = noLag[1] * HOLDER_SPEEDUP:GetFloat()
         else

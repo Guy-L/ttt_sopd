@@ -45,18 +45,18 @@ L["label_sopd_target_min_poolsize"] = "Minimum pool size for Sword to pick targe
 L["label_sopd_sword_form"] = "Sword Properties"
 L["label_sopd_range_buff_desc"] = "Multiplier of the base TTT2 knife's range (1 = same range as knife)"
 L["label_sopd_range_buff"] = "Sword range buff"
+L["label_sopd_regrab_properties_desc"] = "Note that Swords retrieved from bodies do not grant a speed boost and cannot further remove DNA time."
 L["label_sopd_speedup"] = "Speed multiplier while holding Sword"
-L["label_sopd_dna_destruction_desc"] = "Note that Swords grabbed from bodies cannot further remove DNA time."
-L["label_sopd_dna_destruction"] = "Time removed from DNA sample on stab"
+L["label_sopd_dna_destruction"] = "Time removed from DNA sample on stab (s)"
 L["label_sopd_destroy_evidence"] = "Stabbing the target's ragdoll covers up their true death cause (reducing DNA as described above)"
-L["label_sopd_grab_stuck_swords"] = "Swords stuck in bodies can be grabbed again"
+L["label_sopd_grab_stuck_swords"] = "Targeted Swords stuck in bodies can be retrieved"
 L["label_sopd_target_glow"] = "Target glows through walls while holding Sword"
 L["label_sopd_dmg_block_desc"] = "For the below two: 100% = fully block damage from player(s), 0% = no block. Affects shop description."
 L["label_sopd_target_dmg_block"] = "Damage resist. from target player while holding Sword (%)"
 L["label_sopd_others_dmg_block"] = "Damage resist. from other players while holding Sword (%)"
 
-L["label_sopd_pap_form"] = "Pack a Punch"
-L["label_sopd_pap_heal"] = "Heal from inhaling an enemy"
+L["label_sopd_pap_form"] = "Pack-a-Punch"
+L["label_sopd_pap_heal"] = "Health gained from inhaling an enemy"
 L["label_sopd_pap_dmg_block_desc"] = "Similar to (and adds to) the two damage resist. options in General Gameplay, but from any player and only if PaP'd."
 L["label_sopd_pap_dmg_block"] = "Damage resist. from players while holding Sword (%)"
 
@@ -70,10 +70,10 @@ L["label_sopd_sfx_special_swing_chance"] = "Chance for special SFX when swinging
 L["label_sopd_sfx_oatmeal_for_last"] = "Sword plays \"1, 2, Oatmeal\" when deployed with only one opponent left"
 L["label_sopd_sfx_stealth_desc"] = [[
 Stealth: If there are n or more opponents (inno/side team members) left alive, the Sword's sound effect volumes are reduced by v. For less than n opponents, this effect gets proportionally weaker, going away completely at 1 opponent left.
-  - If v = 0%, no reduction occurs.
-  - If v = 100%, the Sword is silent at n or more opponents alive.
-  - For stab noises, v is multiplied by k, which reduces it and thus makes stabs louder (unless k = 100%).
-  - Formula: adjVol = vol * (1 - v * k * min(1, (oppCnt - 1) / (n - 1)))]]
+ • If v = 0%, no reduction occurs.
+ • If v = 100%, the Sword is silent at n or more opponents alive.
+ • For stab noises, v is multiplied by k, which reduces it and thus makes stabs louder (unless k = 100%).
+ • Formula: adjVol = vol * (1 - v * k * min(1, (oppCnt - 1) / (n - 1)))]]
 L["label_sopd_sfx_stealth_vol_reduction"] = "[Stealth] v = Max volume reduction (%)"
 L["label_sopd_sfx_stealth_max_opps"] = "[Stealth] n = Max reduction minimum opponent count"
 L["label_sopd_sfx_stealth_stab_factor"] = "[Stealth] k = Effect strength for stabbing noises (%)"

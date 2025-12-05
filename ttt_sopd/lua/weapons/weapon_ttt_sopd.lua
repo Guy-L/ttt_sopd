@@ -29,7 +29,7 @@ local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 local HOOK_DRAW_SHOP         = "TTT_SoPD_DrawShopIcon"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
-local TARGET_DISCONNECT_MODE = CreateConVar("ttt2_sopd_target_disconnect_mode", 2, CVAR_FLAGS, "Behavior when the target player disconnects midround (0 = do nothing, 1 = pick new target, 3 = make sword targetless, 2/4 = same as 1/3 but does not trigger if the Sword had been used on the target).", 0, 4)
+local TARGET_DISCONNECT_MODE = CreateConVar("ttt2_sopd_target_disconnect_mode", 2, CVAR_FLAGS, "Behavior when the target player disconnects midround (0 = do nothing, 1 = pick new target, 3 = make sword targetless, 2/4 = same as 1/3 but do not trigger if the Sword had been used on the target).", 0, 4)
 local TGTDC_NO_OP = 0
 local TGTDC_PICK_NEW = 1
 local TGTDC_PICK_NEW_IF_UNUSED = 2
@@ -42,27 +42,27 @@ local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVA
 
 local RANGE_BUFF = CreateConVar("ttt2_sopd_range_buff", 1.5, CVAR_FLAGS, "Multiplier for the original TTT knife's range.", 0.01, 5)
 local HOLDER_SPEEDUP = CreateConVar("ttt2_sopd_speedup", 1.3, CVAR_FLAGS, "Player speed multiplier while holding the Sword.", 1, 5)
-local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Value subtracted from victim's DNA timer on kill or corpse stab (per unique Sword).", 0, 120)
-local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (removing DNA if relevant convar is disabled).", 0, 1)
-local CAN_REGRAB_SWORD = CreateConVar("ttt2_sopd_grab_stuck_swords", 1, CVAR_FLAGS, "Whether Swords that are stuck in bodies can be grabbed again.", 0, 1)
+local DNA_DESTRUCTION = CreateConVar("ttt2_sopd_dna_destruction", 70, CVAR_FLAGS, "Time subtracted from victim's DNA timer on kill or corpse stab (per unique Sword, in seconds).", 0, 120)
+local RAGDOLL_STAB_COVERUP = CreateConVar("ttt2_sopd_destroy_evidence", 1, CVAR_FLAGS, "Whether stabbing a dead target with the Sword makes it seem like the Sword killed them (reducing DNA if relevant convar is disabled).", 0, 1)
+local CAN_REGRAB_SWORD = CreateConVar("ttt2_sopd_grab_stuck_swords", 1, CVAR_FLAGS, "Whether targeted Swords that are stuck in bodies can be grabbed again.", 0, 1)
 local ENABLE_TARGET_GLOW = CreateConVar("ttt2_sopd_target_glow", 1, CVAR_FLAGS, "Whether the target player glows for a player holding the Sword.", 0, 1)
-local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage)", 0, 100)
-local OTHERS_DMG_BLOCK = CreateConVar("ttt2_sopd_others_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from non-targets (0 = take full damage, 100 = take no damage)", 0, 100)
+local TARGET_DMG_BLOCK = CreateConVar("ttt2_sopd_target_dmg_block", 100, CVAR_FLAGS, "Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage).", 0, 100)
+local OTHERS_DMG_BLOCK = CreateConVar("ttt2_sopd_others_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from non-targets (0 = take full damage, 100 = take no damage).", 0, 100)
 
 -- used in PaP lua but may be referred to here
 PAP_HEAL = CreateConVar("ttt2_sopd_pap_heal", 80, CVAR_FLAGS, "How much health is gained from inhaling an enemy with the Sword of Player Def-Eat.", 0, 200)
-PAP_DMG_BLOCK = CreateConVar("ttt2_sopd_pap_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from anyone if PAP'd (0 = take full damage, 100 = take no damage)", 0, 100)
+PAP_DMG_BLOCK = CreateConVar("ttt2_sopd_pap_dmg_block", 0, CVAR_FLAGS, "Percent of damage the Sword holder blocks from everyone if packed (0 = take full damage, 100 = take no damage).", 0, 100)
 
 local DEPLOY_SND_SOUNDLEVEL = CreateConVar("ttt2_sopd_sfx_deploy_soundlevel", 100, CVAR_FLAGS, "The Sword deploy song's soundlevel (how far it can be heard).", 0, 300)
-local DEPLOY_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_deploy_volume", 100, CVAR_FLAGS, "The Sword deploy song's volume, before any reductions.", 0, 100)
-local KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any reductions.", 0, 100)
-local SPECIAL_SWING_CHANCE = CreateConVar("ttt2_sopd_sfx_special_swing_chance", 10, CVAR_FLAGS, "Chance for a special sound to play when swinging Sword in the air", 0, 100)
+local DEPLOY_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_deploy_volume", 100, CVAR_FLAGS, "The Sword deploy song's volume, before any stealth-related reductions.", 0, 100)
+local KILL_SND_VOLUME = CreateConVar("ttt2_sopd_sfx_kill_volume", 100, CVAR_FLAGS, "The Sword kill sound's volume, before any stealth-related reductions.", 0, 100)
+local SPECIAL_SWING_CHANCE = CreateConVar("ttt2_sopd_sfx_special_swing_chance", 10, CVAR_FLAGS, "Chance for a special sound effect to play when swinging a Sword in the air.", 0, 100)
 local OATMEAL_FOR_LAST = CreateConVar("ttt2_sopd_sfx_oatmeal_for_last", 1, CVAR_FLAGS, "Whether \"1, 2, Oatmeal\" plays as the deploy song when the target is the last opponent alive.", 0, 1)
 local STEALTH_VOL_REDUCTION = CreateConVar("ttt2_sopd_sfx_stealth_vol_reduction", 50, CVAR_FLAGS, "The volume of Sword sounds is reduced by this factor when many opponents (inno/side teams) are alive.", 0, 100)
 local STEALTH_MAX_OPPS = CreateConVar("ttt2_sopd_sfx_stealth_max_opps", 10, CVAR_FLAGS, "The stealth volume reduction on Sword sound effects is fully applied when this many opponents (inno/side teams) or more are alive, then goes down linearly with the number of remaining opponents (to zero effect when only one opponent left).", 2, 24)
 local STEALTH_STAB_FACTOR = CreateConVar("ttt2_sopd_sfx_stealth_stab_factor", 50, CVAR_FLAGS, "Multiplier to the stealth volume reduction factor for stabbing noises.", 0, 100)
 
-local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debug prints for client & server (should not be on for real play).", 0, 1)
+local DEBUG = CreateConVar("ttt2_sopd_debug", 0, CVAR_FLAGS, "Enables addon debug prints for client & server (should not be enabled for real play).", 0, 1)
 
 ----------------------------------
 ---------- SHARED STATE ----------
@@ -1436,13 +1436,13 @@ elseif CLIENT then
             label = "label_sopd_range_buff",
             min = 0.1, max = 5, decimal = 1
         })
+        formSword:MakeHelp({
+            label = "label_sopd_regrab_properties_desc"
+        })
         formSword:MakeSlider({
             serverConvar = "ttt2_sopd_speedup",
             label = "label_sopd_speedup",
             min = 1, max = 5, decimal = 1
-        })
-        formSword:MakeHelp({
-            label = "label_sopd_dna_destruction_desc"
         })
         formSword:MakeSlider({
             serverConvar = "ttt2_sopd_dna_destruction",

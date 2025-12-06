@@ -190,6 +190,28 @@ function DebugInspect(obj)
     end
 end
 
+function DebugInspectUI(el, ind)
+    if not ind then ind = 0 end
+    local indS = string.rep("  ", ind)
+    local class = el:GetClassName()
+
+    if class == "Panel" then
+        DebugPrint(indS.."Panel "..el:GetName().." (#"..#el:GetChildren().." elements)", el)
+        for _, c in ipairs(el:GetChildren()) do
+            DebugInspectUI(c, ind + 1)
+        end
+
+    elseif class == "Label" then
+        DebugPrint(indS.."Label "..el:GetName()..": \""..el:GetText().."\"", el)
+        for _, c in ipairs(el:GetChildren()) do
+            DebugInspectUI(c, ind + 1)
+        end
+
+    else
+        DebugPrint(indS.."Element "..el:GetName(), el)
+    end
+end
+
 function DebugPrint(...)
     if not DEBUG:GetBool() then return end
 
@@ -531,6 +553,7 @@ elseif CLIENT then
     -- (may not point to the same object when debugging / hot-reloading)
 
     curMetaSWEP.Icon = SWORD_ICON
+    curMetaSWEP.iconMaterial = SWORD_ICON
     curMetaSWEP.PrintName = DEFAULT_NAME
     curMetaSWEP.Author = "Guy"
     curMetaSWEP.Instructions = LANG.TryTranslation("sopd_instruction")

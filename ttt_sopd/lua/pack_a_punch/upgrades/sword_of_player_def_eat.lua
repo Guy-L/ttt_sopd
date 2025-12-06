@@ -1,6 +1,8 @@
 ----------------------------------
 ---- CONSTANTS & UPGRADE INIT ----
 ----------------------------------
+local HOOK_UPGRADER_DEATH      = "TTT_SoPD_MidUpgradeDeath"
+local HOOK_PAP_BEGIN_ROUND     = "TTT_SoPD_ClearNetVarCache"
 local HOOK_DISGUISE_DISCONNECT = "TTT_SoPD_DisguiseTargetDisconnect"
 local GOT_DISGUISE_MSG         = "TTT_SoPD_GainedDisguiseMsg"
 local DISGUISE_DISCONNECT_MSG  = "TTT_SoPD_DisguiseDisconnectMsg"
@@ -11,7 +13,7 @@ UPGRADE.class = "weapon_ttt_sopd"
 --Note: ID disguise functionality requires Identity Disguiser addon to work
 
 ----------------------------------
----- PAP SERVER/CLIENT SETUP -----
+----- PAP SERVER/CLIENT DEFS -----
 ----------------------------------
 if CLIENT then
     net.Receive(GOT_DISGUISE_MSG, function()
@@ -45,6 +47,50 @@ elseif SERVER then
             end
         end
     end)
+
+    -- jank to smuggle networked vars during the upgrade
+    UPGRADE.netVars = {}
+
+    function UPGRADE:Condition(SWEP)
+        SWEP:StopDeploySound("packing")
+
+        local owner = SWEP:GetOwner()
+        if not IsValid(owner) then return false end
+
+        local ownerID = owner:SteamID64()
+        if not self.netVars[ownerID] then
+            self.netVars[ownerID] = {}
+            local s = ""
+
+            for k, v in pairs(SWEP:GetNetworkVars()) do
+                s = s .. k .. ": " .. tostring(v) .. ", "
+                self.netVars[ownerID][k] = v
+            end
+
+            DebugPrint("[SoPD Server] Smuggled variables for " .. owner:Nick() .. " in upgrade: ", s)
+        end
+
+        return true
+    end
+
+    -- for the rare cases where a player dies while upgrading the item,
+    -- which interrupts upgrade & messes with variable smuggling
+    hook.Add("PlayerDeath", HOOK_UPGRADER_DEATH, function(ply)
+        if IsValid(ply) then
+            local plyID = ply:SteamID64()
+
+            if UPGRADE.netVars[plyID] then
+                DebugPrint("[SoPD Server] Cleared smuggled variables for " .. ply:Nick() .. " (player died).")
+                UPGRADE.netVars[plyID] = nil
+            end
+        end
+    end)
+
+    -- for safety
+    hook.Add("TTTBeginRound", HOOK_PAP_BEGIN_ROUND, function()
+        DebugPrint("[SoPD Server] Cleared PaP variable smuggling cache.")
+        UPGRADE.netVars = {}
+    end)
 end
 
 ----------------------------------
@@ -61,7 +107,7 @@ function UPGRADE:Apply(SWEP)
         SWEP:UpdateUI("packed")
 
         -- only needed to it doesn't prepend "PAP" to the name
-        UPGRADE.name = SWEP.PrintName
+        self.name = SWEP.PrintName
 
         -- description (cvar-dependent)
         local customPerks = ""
@@ -79,7 +125,7 @@ function UPGRADE:Apply(SWEP)
             customPerks = customPerks .. "player damage resistance + "
         end
 
-        UPGRADE.desc = "Inhale your enemy and make it later! (" .. customPerks .. "identity disguise on stab, even if the target is already dead)"
+        self.desc = "Inhale your enemy and make it later! (" .. customPerks .. "identity disguise on stab, even if the target is already dead)"
 
     ----------------------------------
     ----- SERVER REALM SWEP DEFS -----
@@ -89,13 +135,22 @@ function UPGRADE:Apply(SWEP)
         SWEP:SetPackVerb(math.random() > 0.5)
         SWEP:StartDeploySound("packed")
 
-        -- carry over relevant vars
-        if self.StabbedTarget ~= nil then
-            SWEP:SetStabbedTarget(self.StabbedTarget)
-            SWEP:SetGrabbedFromCorpse(self.GrabbedFromCorpse)
+        -- apply & clear smuggled network vars
+        local upgradeOwner = SWEP:GetOwner() -- do not re-use past Apply init
+        if IsValid(upgradeOwner) then
+            local upgradeOwnerID = upgradeOwner:SteamID64()
 
-            self.StabbedTarget = nil
-            self.GrabbedFromCorpse = nil
+            if self.netVars[upgradeOwnerID] then
+                local s = ""
+
+                for k, v in pairs(self.netVars[upgradeOwnerID]) do
+                    s = s .. k .. ": " .. tostring(v) .. ", "
+                    SWEP["Set"..k](SWEP, v)
+                end
+
+                DebugPrint("[SoPD Server] Applied & cleared smuggled variables for " .. upgradeOwner:Nick() .. ": ", s)
+                self.netVars[upgradeOwnerID] = nil
+            end
         end
 
         -- API method for this doesn't appear to work lol
@@ -160,21 +215,6 @@ function UPGRADE:Apply(SWEP)
             end
         end
     end
-end
-
--- jank to smuggle networked vars during the upgrade
-function UPGRADE:Condition(SWEP)
-    if SERVER then
-        SWEP:SetPacked(true)
-        SWEP:StopDeploySound("packing")
-
-        if UPGRADE.StabbedTarget == nil then
-            UPGRADE.StabbedTarget     = SWEP:GetStabbedTarget()
-            UPGRADE.GrabbedFromCorpse = SWEP:GetGrabbedFromCorpse()
-        end
-    end
-
-    return true
 end
 
 TTTPAP:Register(UPGRADE)

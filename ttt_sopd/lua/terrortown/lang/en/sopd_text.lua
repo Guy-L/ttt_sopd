@@ -57,7 +57,7 @@ L["label_sopd_others_dmg_block"] = "Damage resist. from other players while hold
 
 L["label_sopd_pap_form"] = "Pack-a-Punch"
 L["label_sopd_pap_heal"] = "Health gained from inhaling an enemy"
-L["label_sopd_pap_dmg_block_desc"] = "Similar to (and adds to) the two damage resist. options in General Gameplay, but from any player and only if PaP'd."
+L["label_sopd_pap_dmg_block_desc"] = "Similar to (and adds to) the two damage resist. options in Sword Properties, but from any player and only if PaP'd."
 L["label_sopd_pap_dmg_block"] = "Damage resist. from players while holding Sword (%)"
 
 L["label_sopd_sfx_form"] = "Sound & Volume"

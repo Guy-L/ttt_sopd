@@ -743,52 +743,82 @@ elseif CLIENT then
     end)
 
     -- update sword's shop Icon (inspired by PaP code)
-    -- note: may be the better way to update shop meta?
-    hook.Add("TTTEquipmentTabs", HOOK_DRAW_SHOP, function(dsheet)
-        if not IsSwordTargeted() then return end
-        local buyMenu
+    -- requires callback-based recursion to work with spectator shop's role select
+    function UpdateShopIconOverlay(dsheet, specCallback)
+        local equipTabPanel
 
         for _, tab in ipairs(dsheet:GetItems()) do
             if tab.Name == "Order Equipment" then
-                buyMenu = tab.Panel
+                equipTabPanel = tab.Panel
                 break
             end
         end
 
-        if buyMenu then
-            buyMenu = buyMenu:GetChildren()
+        if equipTabPanel then
+            -- note: condition for spec dropdown is shown copied from
+            --       TTT2/gamemodes/terrortown/client/cl_equip.lua
+            local client = LocalPlayer()
 
-            -- extracting buy menu collection from equipment tab
-            for _, childIndex in ipairs(CR_VERSION and {2, 1} or {1, 1}) do
-                if not buyMenu or table.IsEmpty(buyMenu) then return end
-                buyMenu = buyMenu[childIndex]
-                if not buyMenu then return end
-                buyMenu = buyMenu:GetChildren()
-            end
+            if not specCallback and (not client:Alive() or not client:IsActive()) then
+                -- find spectator shop's role selector
+                local roleSel = equipTabPanel:GetChildren()
 
-            -- finding the sword's entry to update
-            if buyMenu and not table.IsEmpty(buyMenu) then
-                for _, panel in ipairs(buyMenu) do
-                    if panel.item and panel.item.id == CLASS_NAME then
-                        tgtIcon = vgui.Create("DImage")
+                for i = 1, 2 do
+                    if not roleSel or table.IsEmpty(roleSel) then return end
+                    -- note: icon collection is 2nd child of EquipSelect,
+                    --       which is 1st child of the tab panel
+                    roleSel = roleSel[2]
+                    if not roleSel then return end
+                    if i < 2 then roleSel = roleSel:GetChildren() end
+                end
 
-                        -- setup pfp icon
-                        tgtIcon:SetMaterial(draw.GetAvatarMaterial(swordTarget.SID64, "small"))
-                        tgtIcon:SetTooltip(swordTarget.name)
-                        tgtIcon:SetImageColor(panel.Icon:GetImageColor())
-                        tgtIcon.PerformLayout = function(s)
-                            s:AlignBottom(4); s:AlignRight(4); s:SetSize(16, 16)
+                -- overwrite callback to update buy menu icons on role selection
+                DebugPrint("[SoPD Client] Found & overwrote spec shop role selection callback")
+                local roleSelOnSelect = roleSel.OnSelect
+                roleSel.OnSelect = function(panel, index, value)
+                    roleSelOnSelect(panel, index, value)
+                    UpdateShopIconOverlay(dsheet, true)
+                end
+
+            elseif IsSwordTargeted() then
+                -- extracting buy menu icon collection from equipment tab
+                local buyMenuIcons = equipTabPanel:GetChildren()
+
+                for i = 1, 2 do
+                    if not buyMenuIcons or table.IsEmpty(buyMenuIcons) then return end
+                    -- note: icon collection is 1st child of EquipSelect,
+                    --       which is 1st child of the tab panel
+                    buyMenuIcons = buyMenuIcons[1]
+                    if not buyMenuIcons then return end
+                    buyMenuIcons = buyMenuIcons:GetChildren()
+                end
+
+                -- finding the sword's entry to update
+                if buyMenuIcons and not table.IsEmpty(buyMenuIcons) then
+                    DebugPrint("[SoPD Client] Finding & updating SoPD icon...")
+
+                    for _, panel in ipairs(buyMenuIcons) do
+                        if panel.item and panel.item.id == CLASS_NAME then
+                            tgtIcon = vgui.Create("DImage")
+
+                            -- setup pfp icon
+                            tgtIcon:SetMaterial(draw.GetAvatarMaterial(swordTarget.SID64, "small"))
+                            tgtIcon:SetTooltip(swordTarget.name)
+                            tgtIcon:SetImageColor(panel.Icon:GetImageColor())
+                            tgtIcon.PerformLayout = function(s)
+                                s:AlignBottom(4); s:AlignRight(4); s:SetSize(16, 16)
+                            end
+
+                            -- add pfp layer
+                            panel:AddLayer(tgtIcon)
+                            panel:EnableMousePassthrough(tgtIcon)
                         end
-
-                        -- add pfp layer
-                        panel:AddLayer(tgtIcon)
-                        panel:EnableMousePassthrough(tgtIcon)
-                        return
                     end
                 end
             end
         end
-    end)
+    end
+    hook.Add("TTTEquipmentTabs", HOOK_DRAW_SHOP, UpdateShopIconOverlay)
 
     -- update sword's crystal material to blend in target pfp
     local crystalMat = Material("models/ttt/sopd/sopd_crystal")

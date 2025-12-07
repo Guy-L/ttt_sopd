@@ -389,7 +389,9 @@ if SERVER then
 
     -- Send target data to new clients
     hook.Add("PlayerInitialSpawn", HOOK_PLAYER_CONNECT, function(ply)
-        SendTargetData(ply, true)
+        timer.Simple(5, function() -- safety sync wait for pfp load
+            SendTargetData(ply, true)
+        end)
     end)
 
     local function IsStuckSword(ent)
@@ -738,19 +740,23 @@ elseif CLIENT then
 
                     for _, panel in ipairs(buyMenuIcons) do
                         if panel.item and panel.item.id == CLASS_NAME then
-                            tgtIcon = vgui.Create("DImage")
+                            local avatar = utils.GetAvatar(swordTarget.SID64)
 
-                            -- setup pfp icon
-                            tgtIcon:SetMaterial(draw.GetAvatarMaterial(swordTarget.SID64, "small"))
-                            tgtIcon:SetTooltip(swordTarget.name)
-                            tgtIcon:SetImageColor(panel.Icon:GetImageColor())
-                            tgtIcon.PerformLayout = function(s)
-                                s:AlignBottom(4); s:AlignRight(4); s:SetSize(16, 16)
+                            if avatar then
+                                tgtIcon = vgui.Create("DImage")
+
+                                -- setup pfp icon
+                                tgtIcon:SetMaterial(avatar)
+                                tgtIcon:SetTooltip(swordTarget.name)
+                                tgtIcon:SetImageColor(panel.Icon:GetImageColor())
+                                tgtIcon.PerformLayout = function(s)
+                                    s:AlignBottom(4); s:AlignRight(4); s:SetSize(16, 16)
+                                end
+
+                                -- add pfp layer
+                                panel:AddLayer(tgtIcon)
+                                panel:EnableMousePassthrough(tgtIcon)
                             end
-
-                            -- add pfp layer
-                            panel:AddLayer(tgtIcon)
-                            panel:EnableMousePassthrough(tgtIcon)
                         end
                     end
                 end
@@ -763,11 +769,16 @@ elseif CLIENT then
     local crystalMat = Material("models/ttt/sopd/sopd_crystal")
     function UpdateSwordCrystal()
         if IsSwordTargeted() then
-            crystalMat:SetTexture("$detail", draw.GetAvatarMaterial(swordTarget.SID64, "large"):GetTexture("$basetexture"))
-        else
-            crystalMat:SetUndefined("$detail")
+            local avaMat, avaTex = utils.GetAvatar(swordTarget.SID64)
+
+            if avaMat and avaTex then
+                crystalMat:SetTexture("$detail", avaTex)
+                crystalMat:Recompute()
+                return
+            end
         end
 
+        crystalMat:SetUndefined("$detail")
         crystalMat:Recompute()
     end
 
@@ -910,6 +921,7 @@ elseif CLIENT then
 
     --harmless; helps w/ hot-reloading
     UpdateSwordMeta("lua load")
+    UpdateSwordCrystal()
 end
 
 ----------------------------------

@@ -63,4 +63,18 @@ function SoPD_Utils.IsLivingPlayer(ply)
     return IsPlayer(ply) and ply:Alive() and not ply:IsSpec()
 end
 
+function SoPD_Utils.GetAvatar(sid, size)
+    if not size then size = "small" end
+    local avatarMat = draw.GetAvatarMaterial(swordTarget.SID64, size)
+    local avatarTex = avatarMat:GetTexture("$basetexture")
+
+    if avatarMat and avatarTex -- only return valid avatars
+      and avatarMat:GetName() ~= "vgui/ttt/b-draw/icon_avatar_default"
+      and avatarMat:GetName() ~= "vgui/ttt/b-draw/icon_avatar_bot"
+      and not avatarTex:IsError()
+      and not avatarTex:IsErrorTexture() then
+        return avatarMat, avatarTex
+    end
+end
+
 SoPD_DBG.Print("[SoPD] Utils initialized")

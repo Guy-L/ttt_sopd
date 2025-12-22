@@ -1,3 +1,4 @@
-sopd resources/model/compiled 0.74/
+**/compiled 0.74/
+**/anims/
 *.blend1
 *.lnk

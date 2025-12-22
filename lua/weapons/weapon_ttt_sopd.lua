@@ -67,7 +67,7 @@ local STEALTH_STAB_FACTOR = CreateConVar("ttt2_sopd_sfx_stealth_stab_factor", 50
 ----------------------------------
 ---------- SHARED STATE ----------
 ----------------------------------
-sounds = {
+SoPD_sounds = {
     swing_base    = Sound("Weapon_Crowbar.Single"),
     swing1        = Sound("sopd/sopd_swing1.mp3"),
     swing2        = Sound("sopd/sopd_swing2.mp3"),
@@ -83,6 +83,7 @@ sounds = {
     rag_stab1     = Sound("sopd/sopd_rag_stab1.mp3"),
     rag_stab2     = Sound("sopd/sopd_rag_stab2.mp3"),
 }
+local sounds = SoPD_sounds
 
 swordTarget = swordTarget or {} -- target data, synchronized for server & client
 --.player: player ref, may become invalid if target disconnects

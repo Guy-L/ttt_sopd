@@ -4,6 +4,7 @@
 local TryT  = LANG.TryTranslation
 local utils = SoPD_Utils
 local dbg   = SoPD_DBG
+local snd   = SoPD_Sounds
 local CLASS_NAME   = "weapon_ttt_sopd"
 local DEFAULT_NAME = "Sword of Player Defeat"
 local SWORD_VIEWMODEL  = "models/ttt/sopd/v_sopd.mdl"
@@ -67,24 +68,6 @@ local STEALTH_STAB_FACTOR = CreateConVar("ttt2_sopd_sfx_stealth_stab_factor", 50
 ----------------------------------
 ---------- SHARED STATE ----------
 ----------------------------------
-SoPD_sounds = {
-    swing_base    = Sound("Weapon_Crowbar.Single"),
-    swing1        = Sound("sopd/sopd_swing1.mp3"),
-    swing2        = Sound("sopd/sopd_swing2.mp3"),
-    swing3        = Sound("sopd/sopd_swing3.mp3"),
-    swing_spc1    = Sound("sopd/sopd_swing_special1.mp3"),
-    swing_spc2    = Sound("sopd/sopd_swing_special2.mp3"),
-    triumph_best  = Sound("sopd/sopd_triumph_best.mp3"),
-    triumph_nobgm = Sound("sopd/sopd_triumph_nobgm.mp3"),
-    triumph_other = Sound("sopd/sopd_triumph_other.mp3"),
-    oatmeal       = Sound("sopd/sopd_oatmeal.mp3"),
-    gourmet       = Sound("sopd/sopd_gourmet.mp3"),
-    inhale        = Sound("sopd/sopd_inhale.mp3"),
-    rag_stab1     = Sound("sopd/sopd_rag_stab1.mp3"),
-    rag_stab2     = Sound("sopd/sopd_rag_stab2.mp3"),
-}
-local sounds = SoPD_sounds
-
 swordTarget = swordTarget or {} -- target data, synchronized for server & client
 --.player: player ref, may become invalid if target disconnects
 --.name: player's name (always valid)
@@ -680,7 +663,7 @@ elseif CLIENT then
             end
 
             dbg.Print("[SoPD SFX] Playing on-kill triumph sound", choice)
-            swordEnt:EmitSound(sounds[choice], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_BODY)
+            swordEnt:EmitSound(snd[choice], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_BODY)
         end
     end)
 
@@ -986,7 +969,7 @@ end
 
 function SWEP:PrimaryAttack()
     self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
-    self:EmitSound(sounds["swing" .. tostring(math.random(3))], 75, math.random(90, 110))
+    self:EmitSound(snd["swing" .. tostring(math.random(3))], 75, math.random(90, 110))
 
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
@@ -1029,7 +1012,7 @@ function SWEP:PrimaryAttack()
     else
         self:SendWeaponAnim(ACT_VM_MISSCENTER)
         if math.random() < (SPECIAL_SWING_CHANCE:GetFloat() / 100) then
-            self:EmitSound(sounds["swing_spc" .. tostring(math.random(2))], 75, math.random(95, 105))
+            self:EmitSound(snd["swing_spc" .. tostring(math.random(2))], 75, math.random(95, 105))
         end
     end
 
@@ -1278,7 +1261,7 @@ if SERVER then
             if math.random() > 0.8 then stabSnd = "rag_stab2" end
 
             dbg.Print("[SoPD SFX] Playing ragdoll stab sound", stabSnd, "vol", stabVol)
-            stuckSword:EmitSound(sounds[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
+            stuckSword:EmitSound(snd[stabSnd], SNDLVL_90dB, 100, stabVol, CHAN_BODY)
         end
 
         self:Consume(true, hitRagdoll)
@@ -1332,7 +1315,7 @@ if SERVER then
             deploySnd = "oatmeal"
         end
 
-        self.DeploySound = CreateSound(owner, sounds[deploySnd])
+        self.DeploySound = CreateSound(owner, snd[deploySnd])
         self.DeploySound:SetSoundLevel(DEPLOY_SND_SOUNDLEVEL:GetInt())
         self.DeploySound:PlayEx(AdjustVolume(false), 100)
     end

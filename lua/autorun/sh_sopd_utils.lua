@@ -2,6 +2,23 @@ local DEBUG = CreateConVar("ttt2_sopd_debug", 0, {FCVAR_NOTIFY, FCVAR_ARCHIVE, F
 SoPD_DBG = {}
 SoPD_Utils = {}
 
+SoPD_Sounds = {
+    swing_base    = Sound("Weapon_Crowbar.Single"),
+    swing1        = Sound("sopd/sopd_swing1.mp3"),
+    swing2        = Sound("sopd/sopd_swing2.mp3"),
+    swing3        = Sound("sopd/sopd_swing3.mp3"),
+    swing_spc1    = Sound("sopd/sopd_swing_special1.mp3"),
+    swing_spc2    = Sound("sopd/sopd_swing_special2.mp3"),
+    triumph_best  = Sound("sopd/sopd_triumph_best.mp3"),
+    triumph_nobgm = Sound("sopd/sopd_triumph_nobgm.mp3"),
+    triumph_other = Sound("sopd/sopd_triumph_other.mp3"),
+    oatmeal       = Sound("sopd/sopd_oatmeal.mp3"),
+    gourmet       = Sound("sopd/sopd_gourmet.mp3"),
+    inhale        = Sound("sopd/sopd_inhale.mp3"),
+    rag_stab1     = Sound("sopd/sopd_rag_stab1.mp3"),
+    rag_stab2     = Sound("sopd/sopd_rag_stab2.mp3"),
+}
+
 function SoPD_DBG.Inspect(obj)
     if not DEBUG:GetBool() then return end
     print(obj, type(obj))

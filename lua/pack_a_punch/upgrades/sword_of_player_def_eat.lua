@@ -1,6 +1,9 @@
 ----------------------------------
 ---- CONSTANTS & UPGRADE INIT ----
 ----------------------------------
+local utils = SoPD_Utils
+local dbg   = SoPD_DBG
+local snd = SoPD_Sounds
 local HOOK_DISGUISE_DISCONNECT = "TTT_SoPD_DisguiseTargetDisconnect"
 local GOT_DISGUISE_MSG         = "TTT_SoPD_GainedDisguiseMsg"
 local DISGUISE_DISCONNECT_MSG  = "TTT_SoPD_DisguiseDisconnectMsg"
@@ -15,12 +18,12 @@ UPGRADE.class = "weapon_ttt_sopd"
 ----------------------------------
 if CLIENT then
     net.Receive(GOT_DISGUISE_MSG, function()
-        DebugPrint("[SoPD Client] Received disguise notif")
+        dbg.Print("[SoPD Client] Received disguise notif")
         UpdateLocalInventorySword("received disguise")
     end)
 
     net.Receive(DISGUISE_DISCONNECT_MSG, function()
-        DebugPrint("[SoPD Client] Received disguise disconnect notif")
+        dbg.Print("[SoPD Client] Received disguise disconnect notif")
         UpdateLocalInventorySword("disguise disconnected")
     end)
 
@@ -109,7 +112,7 @@ function UPGRADE:Apply(SWEP)
 
         function SWEP:PackEffect(rag, owner)
             -- play kirby inhale noise
-            owner:EmitSound(sounds["inhale"], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_VOICE)
+            owner:EmitSound(snd["inhale"], SNDLVL_150dB, 100, AdjustVolume(true), CHAN_VOICE)
 
             -- delay eating to line up with suck sfx
             timer.Simple(2, function()

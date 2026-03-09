@@ -30,6 +30,7 @@ local HOOK_SWORD_PICKUP      = "TTT_SoPD_PickUpSword"
 local HOOK_SWORD_UNSTICK     = "TTT_SoPD_PickUpStuckSword"
 local HOOK_SPEEDMOD          = "TTT_SoPD_HolderSpeedup"
 local HOOK_DRAW_SHOP         = "TTT_SoPD_DrawShopIcon"
+local HOOK_DRAW_IEM          = "TTT_SoPD_DrawImprovedShopIcon"
 
 local CVAR_FLAGS = {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}
 local TARGET_DISCONNECT_MODE = CreateConVar("ttt2_sopd_target_disconnect_mode", 2, CVAR_FLAGS, "Behavior when the target player disconnects midround (0 = do nothing, 1 = pick new target, 3 = make sword targetless, 2/4 = same as 1/3 but do not trigger if the Sword had been used on the target).", 0, 4)
@@ -748,6 +749,23 @@ elseif CLIENT then
         end
     end
     hook.Add("TTTEquipmentTabs", HOOK_DRAW_SHOP, UpdateShopIconOverlay)
+
+    -- hook to make the shop icon compatible with Layton's Improved Equipment Menu addon
+    hook.Add("TTT2IEMMakeEquipmentIcon", HOOK_DRAW_IEM, function(dButton)
+        local oldPaint = dButton.Paint
+
+        dButton.Paint = function(panel, w, h)
+            oldPaint(panel, w, h)
+
+            if dButton.item.id == "weapon_ttt_sopd" and IsSwordTargeted() then
+                local avatar = SoPD_Utils.GetAvatar(swordTarget.SID64)
+
+                surface.SetMaterial(avatar)
+                surface.SetDrawColor(color_white)
+                surface.DrawTexturedRect(w - 16 - 4, h - 16 - 4, 16, 16)
+            end
+        end
+    end)
 
     -- update sword's crystal material to blend in target pfp
     local crystalMat = Material("models/ttt/sopd/sopd_crystal")

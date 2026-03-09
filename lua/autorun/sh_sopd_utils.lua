@@ -37,19 +37,19 @@ function SoPD_DBG.InspectUI(el, ind)
     local class = el:GetClassName()
 
     if class == "Panel" then
-        DebugPrint(indS.."Panel "..el:GetName().." (#"..#el:GetChildren().." elements)", el)
+        SoPD_DBG.Print(indS.."Panel "..el:GetName().." (#"..#el:GetChildren().." elements)", el)
         for _, c in ipairs(el:GetChildren()) do
             DebugInspectUI(c, ind + 1)
         end
 
     elseif class == "Label" then
-        DebugPrint(indS.."Label "..el:GetName()..": \""..el:GetText().."\"", el)
+        SoPD_DBG.Print(indS.."Label "..el:GetName()..": \""..el:GetText().."\"", el)
         for _, c in ipairs(el:GetChildren()) do
             DebugInspectUI(c, ind + 1)
         end
 
     else
-        DebugPrint(indS.."Element "..el:GetName(), el)
+        SoPD_DBG.Print(indS.."Element "..el:GetName(), el)
     end
 end
 

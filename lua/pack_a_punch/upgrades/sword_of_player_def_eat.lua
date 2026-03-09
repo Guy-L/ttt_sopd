@@ -3,7 +3,7 @@
 ----------------------------------
 local utils = SoPD_Utils
 local dbg   = SoPD_DBG
-local snd = SoPD_Sounds
+local snd   = SoPD_Sounds
 local HOOK_DISGUISE_DISCONNECT = "TTT_SoPD_DisguiseTargetDisconnect"
 local GOT_DISGUISE_MSG         = "TTT_SoPD_GainedDisguiseMsg"
 local DISGUISE_DISCONNECT_MSG  = "TTT_SoPD_DisguiseDisconnectMsg"

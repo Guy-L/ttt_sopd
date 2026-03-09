@@ -758,7 +758,7 @@ elseif CLIENT then
             oldPaint(panel, w, h)
 
             if dButton.item.id == "weapon_ttt_sopd" and IsSwordTargeted() then
-                local avatar = SoPD_Utils.GetAvatar(swordTarget.SID64)
+                local avatar = utils.GetAvatar(swordTarget.SID64)
 
                 surface.SetMaterial(avatar)
                 surface.SetDrawColor(color_white)

@@ -1,5 +1,5 @@
 local DEBUG = CreateConVar("ttt2_sopd_debug", 0, {FCVAR_NOTIFY, FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Enables addon debug prints for client & server (should not be enabled for real play).", 0, 1)
-SoPD_DBG = {}
+SoPD_DBG   = {}
 SoPD_Utils = {}
 
 SoPD_Sounds = {

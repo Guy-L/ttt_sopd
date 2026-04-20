@@ -35,6 +35,7 @@ Note that changing most of these updates the item's shop description to reflect 
 | **target_glow** | Whether the target player glows for a player holding the Sword. | true |
 | **target_dmg_block** | Percent of damage the Sword holder blocks from the target (0 = take full damage, 100 = take no damage) | 100 |
 | **others_dmg_block** | Percent of damage the Sword holder blocks from non-targets (same as above) | 0 |
+| **can_teamkill** | Whether players on the same side of the Sword target pool boundary can swing the Sword at each other. Jesters are considered evil aligned for this. | true |
 
 ## Pack-a-Punch
 

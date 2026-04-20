@@ -41,6 +41,7 @@ local TGTDC_UNTARGET = 3
 local TGTDC_UNTARGET_IF_UNUSED = 4
 local CAN_TARGET_DEAD = CreateConVar("ttt2_sopd_can_target_dead", 1, CVAR_FLAGS, "Whether dead players can be selected as the target.", 0, 1)
 local CAN_TARGET_JESTERS = CreateConVar("ttt2_sopd_can_target_jesters", 1, CVAR_FLAGS, "Whether Jesters can be selected as the target.", 0, 1)
+local CAN_TEAMKILL = CreateConVar("ttt2_sopd_can_teamkill", 0, CVAR_FLAGS, "Whether players on the same side of the Sword target pool boundary can kill each other with the Sword.", 0, 1)
 local NOTIFY_TARGET_PLAYER = CreateConVar("ttt2_sopd_notify_target", 0, CVAR_FLAGS, "Whether to notify target players when they are selected.", 0, 1)
 local TARGET_MIN_POOLSIZE = CreateConVar("ttt2_sopd_target_min_poolsize", 2, CVAR_FLAGS, "Minimum possible target pool size for the Sword to be allowed to pick one.", 1, 6)
 
@@ -99,8 +100,8 @@ function HoldsSword(ply, swordNeedsAmmo)
 end
 
 --same as target drawing pool but without jesters (unless they are the target)
-function IsOpponent(ply, canBeDead)
-    if ply == swordTarget.player then return true end
+function IsOpponent(ply, canBeDead, ignoreTarget)
+    if not ignoreTarget and ply == swordTarget.player then return true end
 
     return (utils.IsLivingPlayer(ply) or canBeDead)
        and ply:GetTeam() ~= TEAM_TRAITOR and ply:GetTeam() ~= TEAM_JACKAL
@@ -621,13 +622,18 @@ elseif CLIENT then
     --notify instakill in target's info if InPlayerStabRange
     hook.Add("TTTRenderEntityInfo", HOOK_RENDER_ENTINFO, function(tData)
         local localPlayer = LocalPlayer()
+        local lookEnt = tData:GetEntity()
 
-        if CanBeStabbed(tData:GetEntity()) and InPlayerStabRange(localPlayer) and HoldsSword(localPlayer, true) then
+        if CanBeStabbed(lookEnt) and InPlayerStabRange(localPlayer) and HoldsSword(localPlayer, true) then
             local role_color = localPlayer:GetRoleColor()
             local insta_label = "sopd_instantkill"
-            if localPlayer:GetActiveWeapon():GetPacked() then
+
+            if IsOpponent(lookEnt, false, true) == IsOpponent(localPlayer, false, true) then
+                insta_label = "sopd_noteamkill"
+            elseif localPlayer:GetActiveWeapon():GetPacked() then
                 insta_label = "sopd_instanteat"
             end
+
             tData:AddDescriptionLine(LANG.TryTranslation(insta_label), role_color)
 
             -- draw instant-kill maker
@@ -967,6 +973,21 @@ SWEP.IsSilent    = true --(negated by the noises we add lol)
 SWEP.AllowDrop   = true
 SWEP.DeploySpeed = 2
 
+local noTeamkillLines = {
+    "No teamkilling!",
+    "No teamkilling!",
+    "No teamkilling!",
+    "No teamkilling!",
+    "No! Bad!",
+    "nuh uh",
+    "They're on your side!",
+    "Defeating them just feels wrong.",
+    "You wouldn't defeat an ally.",
+    "You wouldn't!",
+    "You think better of it.",
+    "That would be no triumph."
+}
+
 function SWEP:SetupDataTables()
     -- note: could check for self.PAPUpgrade ~= nil to not store this,
     --       but it's not properly networked & false for client during Apply
@@ -986,9 +1007,6 @@ function SWEP:HasSwordAmmo()
 end
 
 function SWEP:PrimaryAttack()
-    self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
-    self:EmitSound(snd["swing" .. tostring(math.random(3))], 75, math.random(90, 110))
-
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
     owner:LagCompensation(true)
@@ -1013,6 +1031,16 @@ function SWEP:PrimaryAttack()
 
     local hitEnt = tr.Entity
     dbg.Print("SoPD Primary hit entity:", hitEnt)
+
+    if not CAN_TEAMKILL:GetBool() and CanBeStabbed(hitEnt) and IsSwordTargeted()
+      and IsOpponent(hitEnt, false, true) == IsOpponent(owner, false, true) then
+        utils.NonSpamMessage(owner, "teamkill_attempt", noTeamkillLines[math.random(#noTeamkillLines)], true)
+        owner:LagCompensation(false)
+        return
+    end
+
+    self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
+    self:EmitSound(snd["swing" .. tostring(math.random(3))], 75, math.random(90, 110))
 
     -- effects
     if IsValid(hitEnt) then
@@ -1534,6 +1562,13 @@ elseif CLIENT then
             serverConvar = "ttt2_sopd_others_dmg_block",
             label = "label_sopd_others_dmg_block",
             min = 0, max = 100, decimal = 0
+        })
+        formSword:MakeHelp({
+            label = "label_sopd_can_teamkill_desc"
+        })
+        formSword:MakeCheckBox({
+            serverConvar = "ttt2_sopd_can_teamkill",
+            label = "label_sopd_can_teamkill"
         })
 
         local formPaP = vgui.CreateTTT2Form(parent, "label_sopd_pap_form")

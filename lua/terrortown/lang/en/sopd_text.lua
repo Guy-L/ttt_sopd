@@ -22,6 +22,7 @@ L["sopd_target_notif5"] = "A bell tolls for you."
 
 L["sopd_instantkill"] = "DEFEAT"
 L["sopd_instanteat"] = "INHALE"
+L["sopd_noteamkill"] = "ALLY"
 
 L["label_sopd_targets_form"] = "Target Selection"
 L["label_sopd_target_disconnect_mode_desc"] = [[
@@ -54,6 +55,8 @@ L["label_sopd_target_glow"] = "Target glows through walls while holding Sword"
 L["label_sopd_dmg_block_desc"] = "For the below two: 100% = fully block damage from player(s), 0% = no block. Affects shop description."
 L["label_sopd_target_dmg_block"] = "Damage resist. from target player while holding Sword (%)"
 L["label_sopd_others_dmg_block"] = "Damage resist. from other players while holding Sword (%)"
+L["label_sopd_can_teamkill_desc"] = "For Sword purposes, players are on the same team if they're on the same side of the Sword target pool boundary. Attempting to teamkill will do nothing, including not playing the swing animation. There's an exception for Jesters, who are considered evil-aligned even if targetable."
+L["label_sopd_can_teamkill"] = "Can teamkill with the Sword"
 
 L["label_sopd_pap_form"] = "Pack-a-Punch"
 L["label_sopd_pap_heal"] = "Health gained from inhaling an enemy"

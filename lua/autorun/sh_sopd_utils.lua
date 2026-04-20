@@ -94,4 +94,13 @@ function SoPD_Utils.GetAvatar(sid, size)
     end
 end
 
+function SoPD_Utils.NonSpamMessage(ply, id, msg, serverOnly)
+    if CLIENT and serverOnly then return end
+
+    if not ply["Last"..id] or CurTime() > ply["Last"..id] + 1 then
+        ply:ChatPrint(msg)
+        ply["Last"..id] = CurTime()
+    end
+end
+
 SoPD_DBG.Print("[SoPD] Utils initialized")

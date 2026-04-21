@@ -1030,9 +1030,10 @@ function SWEP:PrimaryAttack()
     end
 
     local hitEnt = tr.Entity
-    dbg.Print("SoPD Primary hit entity:", hitEnt)
+    local isPacked = self:GetPacked()
+    dbg.Print("SoPD Primary hit entity:", hitEnt, isPacked and "(packed)" or "")
 
-    if not CAN_TEAMKILL:GetBool() and CanBeStabbed(hitEnt) and IsSwordTargeted()
+    if not CAN_TEAMKILL:GetBool() and CanBeStabbed(hitEnt) and IsSwordTargeted() and not isPacked
       and IsOpponent(hitEnt, false, true) == IsOpponent(owner, false, true) then
         utils.NonSpamMessage(owner, "teamkill_attempt", noTeamkillLines[math.random(#noTeamkillLines)], true)
         owner:LagCompensation(false)
@@ -1100,7 +1101,7 @@ function SWEP:PrimaryAttack()
                 local IS_RAG        = hitEnt:GetClass() == "prop_ragdoll"
                 local IS_PLAYER_RAG = hitEnt:IsPlayerRagdoll()
                 local TARGET_MATCH  = hitEnt == swordTarget.ragdoll or hitEnt.sid64 == swordTarget.SID64
-                local UNTARGET_PAP  = swordTarget.name == nil and self:GetPacked()
+                local UNTARGET_PAP  = swordTarget.name == nil and isPacked
                 local isRagStab = IS_RAG and IS_PLAYER_RAG and (TARGET_MATCH or UNTARGET_PAP)
 
                 dbg.Print("• RAGSTAB - "    .. tostring(isRagStab)

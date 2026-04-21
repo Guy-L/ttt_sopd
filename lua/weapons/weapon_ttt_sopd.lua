@@ -1033,7 +1033,8 @@ function SWEP:PrimaryAttack()
     local isPacked = self:GetPacked()
     dbg.Print("SoPD Primary hit entity:", hitEnt, isPacked and "(packed)" or "")
 
-    if not CAN_TEAMKILL:GetBool() and CanBeStabbed(hitEnt) and IsSwordTargeted() and not isPacked
+    if not CAN_TEAMKILL:GetBool() and CanBeStabbed(hitEnt)
+      and IsSwordTargeted() and not isPacked and hitEnt != owner
       and IsOpponent(hitEnt, false, true) == IsOpponent(owner, false, true) then
         utils.NonSpamMessage(owner, "teamkill_attempt", noTeamkillLines[math.random(#noTeamkillLines)], true)
         owner:LagCompensation(false)

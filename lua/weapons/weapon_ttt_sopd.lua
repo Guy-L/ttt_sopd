@@ -105,7 +105,8 @@ function IsOpponent(ply, canBeDead, ignoreTarget)
 
     return (utils.IsLivingPlayer(ply) or canBeDead)
        and ply:GetTeam() ~= TEAM_TRAITOR and ply:GetTeam() ~= TEAM_JACKAL
-       and ply:GetTeam() ~= TEAM_INFECTED and ply:GetTeam() ~= TEAM_JESTER
+       and ply:GetTeam() ~= TEAM_INFECTED and ply:GetTeam() ~= TEAM_BARON
+       and ply:GetTeam() ~= TEAM_JESTER
 end
 
 function GetOpponentCount()
@@ -184,6 +185,7 @@ if SERVER then
               and ply:GetTeam() ~= TEAM_TRAITOR
               and ply:GetTeam() ~= TEAM_JACKAL
               and ply:GetTeam() ~= TEAM_INFECTED
+              and ply:GetTeam() ~= TEAM_BARON
               and (ply:GetTeam() ~= TEAM_JESTER or CAN_TARGET_JESTERS:GetBool())
               and (utils.IsLivingPlayer(ply) or (CAN_TARGET_DEAD:GetBool() and IsValid(ply.server_ragdoll))) then
 
@@ -968,7 +970,7 @@ SWEP.Primary.Delay       = 0.5
 SWEP.Primary.Ammo        = "none"
 
 SWEP.Kind        = WEAPON_EQUIP
-SWEP.CanBuy      = {ROLE_TRAITOR, ROLE_JACKAL}
+SWEP.CanBuy      = {ROLE_TRAITOR, ROLE_JACKAL, ROLE_BARON}
 SWEP.IsSilent    = true --(negated by the noises we add lol)
 SWEP.AllowDrop   = true
 SWEP.DeploySpeed = 2
